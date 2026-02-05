@@ -46,7 +46,8 @@
         } from 'firebase/firestore';
         import { 
             Plus, Trash2, Tag, BarChart3, Play, Settings, RotateCcw, 
-            Frown, Smile, Meh, AlertCircle, CheckCircle2, X, Search, User, Share2 
+            Frown, Smile, Meh, AlertCircle, CheckCircle2, X, Search, User, Share2,
+            Image as ImageIcon, Upload
         } from 'lucide-react';
 
         // ==========================================
@@ -55,7 +56,7 @@
         let firebaseConfig;
         let appId = 'char-analyzer-public';
 
-        // 1. Canvasプレビュー環境変数のチェック
+        // 1. Canvasプレビュー環境変数のチェック（開発環境用）
         if (typeof __firebase_config !== 'undefined') {
             try {
                 firebaseConfig = JSON.parse(__firebase_config);
@@ -65,21 +66,20 @@
             }
         }
         
-        // 2. 環境変数がない場合（Vercel等の外部環境）、手動設定を使用
-        // ★★★ 外部公開時はここを書き換えてください ★★★
+        // 2. 本番環境用設定（提供された情報を適用済み）
         if (!firebaseConfig) {
             firebaseConfig = {
-      apiKey: "AIzaSyCjLdydnVAYgHh0iKVtpskoy-W4HpFDDe4",
-      authDomain: "test1-7c377a.firebaseapp.com",
-      projectId: "test1-7c377a",
-      storageBucket: "test1-7c377a.firebasestorage.app",
-      messagingSenderId: "559194725567",
-      appId: "1:559194725567:web:d6a3109709fe62ee8fba0a"
-    };
+                apiKey: "AIzaSyCjLdydnVAYgHh0iKVtpskoy-W4HpFDDe4",
+                authDomain: "test1-7c377a.firebaseapp.com",
+                projectId: "test1-7c377a",
+                storageBucket: "test1-7c377a.firebasestorage.app",
+                messagingSenderId: "559194725567",
+                appId: "1:559194725567:web:d6a3109709fe62ee8fba0a"
+            };
         }
 
-        // 設定が正しくされているかチェック
-        const isConfigured = firebaseConfig.apiKey !== "API_KEY_HERE";
+        // 設定が完了しているとみなす
+        const isConfigured = true;
 
         // アプリの初期化
         const app = initializeApp(firebaseConfig);
@@ -94,17 +94,7 @@
                         <Settings /> 設定が必要です
                     </h2>
                     <p className="mb-4 text-slate-300">
-                        アプリを動かすために、Firebaseとの連携設定が必要です。
-                    </p>
-                    <div className="bg-slate-900 p-4 rounded-lg font-mono text-xs text-green-400 overflow-x-auto mb-4 border border-slate-700">
-                        const firebaseConfig = &#123;<br/>
-                        &nbsp;&nbsp;apiKey: "あなたのAPIキー",<br/>
-                        &nbsp;&nbsp;authDomain: "..."<br/>
-                        &nbsp;&nbsp;...<br/>
-                        &#125;;
-                    </div>
-                    <p className="text-sm text-slate-400">
-                        このファイルの <code>firebaseConfig</code> の部分を、あなたのFirebaseプロジェクトの設定で書き換えて保存してください。
+                        Firebaseの設定情報を読み込めませんでした。
                     </p>
                 </div>
             </div>
@@ -117,6 +107,7 @@
             const [mode, setMode] = useState('setup');
             const [swipeIndex, setSwipeIndex] = useState(0);
             const [loading, setLoading] = useState(true);
+            const [isProcessingImage, setIsProcessingImage] = useState(false);
 
             // スワイプアニメーション用
             const [offsetX, setOffsetX] = useState(0);
@@ -126,6 +117,7 @@
             // フォーム用
             const [newChar, setNewChar] = useState({ name: '', imageUrl: '', tags: [] });
             const suggestedTags = ["不気味の谷", "目が笑っていない", "色が派手すぎ", "プロポーションが歪", "あざとい", "無機質", "人間味がありすぎ", "左右非対称"];
+            const fileInputRef = useRef(null);
 
             // 1. Authentication
             useEffect(() => {
@@ -173,6 +165,64 @@
                 };
             }, [user]);
 
+            // 画像処理（圧縮してBase64化）
+            const processImage = (file) => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            
+                            // リサイズ設定 (最大長辺 600px)
+                            const MAX_SIZE = 600;
+                            let width = img.width;
+                            let height = img.height;
+                            
+                            if (width > height) {
+                                if (width > MAX_SIZE) {
+                                    height *= MAX_SIZE / width;
+                                    width = MAX_SIZE;
+                                }
+                            } else {
+                                if (height > MAX_SIZE) {
+                                    width *= MAX_SIZE / height;
+                                    height = MAX_SIZE;
+                                }
+                            }
+                            
+                            canvas.width = width;
+                            canvas.height = height;
+                            ctx.drawImage(img, 0, 0, width, height);
+                            
+                            // 圧縮 (JPEG quality 0.7)
+                            resolve(canvas.toDataURL('image/jpeg', 0.7));
+                        };
+                        img.onerror = reject;
+                        img.src = e.target.result;
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+            };
+
+            const handleFileChange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                try {
+                    setIsProcessingImage(true);
+                    const base64Image = await processImage(file);
+                    setNewChar(prev => ({ ...prev, imageUrl: base64Image }));
+                } catch (err) {
+                    console.error("Image processing error:", err);
+                    alert("画像の処理に失敗しました。");
+                } finally {
+                    setIsProcessingImage(false);
+                }
+            };
+
             // Actions
             const saveCharacter = async () => {
                 if (!newChar.name || !user) return;
@@ -186,7 +236,7 @@
                     setNewChar({ name: '', imageUrl: '', tags: [] });
                 } catch (err) {
                     console.error("Save error:", err);
-                    alert("保存に失敗しました。Firestoreのルール設定を確認してください。");
+                    alert("保存に失敗しました。Firestoreのルール設定や画像サイズを確認してください。");
                 }
             };
 
@@ -292,12 +342,55 @@
                                             value={newChar.name}
                                             onChange={e => setNewChar({...newChar, name: e.target.value})}
                                         />
-                                        <input 
-                                            placeholder="画像URL (https://...)"
-                                            className="w-full bg-slate-700 border-none rounded-2xl p-4 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500"
-                                            value={newChar.imageUrl}
-                                            onChange={e => setNewChar({...newChar, imageUrl: e.target.value})}
-                                        />
+                                        
+                                        {/* 画像アップロード & URL入力 */}
+                                        <div className="space-y-2">
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    placeholder="画像URL (https://...)"
+                                                    className="flex-1 bg-slate-700 border-none rounded-2xl p-4 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 text-sm"
+                                                    value={newChar.imageUrl.startsWith('data:') ? '' : newChar.imageUrl}
+                                                    onChange={e => setNewChar({...newChar, imageUrl: e.target.value})}
+                                                    disabled={newChar.imageUrl.startsWith('data:')}
+                                                />
+                                                <input
+                                                    type="file"
+                                                    ref={fileInputRef}
+                                                    onChange={handleFileChange}
+                                                    accept="image/*"
+                                                    className="hidden"
+                                                />
+                                                <button 
+                                                    onClick={() => fileInputRef.current?.click()}
+                                                    className="bg-slate-700 hover:bg-slate-600 text-slate-300 p-4 rounded-2xl transition-colors"
+                                                    title="画像をアップロード"
+                                                >
+                                                    <Upload size={20} />
+                                                </button>
+                                            </div>
+                                            
+                                            {/* アップロード済みプレビュー */}
+                                            {newChar.imageUrl && (
+                                                <div className="relative w-full h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 group">
+                                                    <img src={newChar.imageUrl} className="w-full h-full object-contain" />
+                                                    <button 
+                                                        onClick={() => {
+                                                            setNewChar({...newChar, imageUrl: ''});
+                                                            if (fileInputRef.current) fileInputRef.current.value = '';
+                                                        }}
+                                                        className="absolute top-2 right-2 p-1 bg-black/50 hover:bg-red-500 rounded-full text-white transition-colors"
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                    {isProcessingImage && (
+                                                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
                                         <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700">
                                             <p className="text-xs text-slate-400 mb-3 font-bold uppercase tracking-widest">特徴タグ</p>
                                             <div className="flex flex-wrap gap-2 mb-4">
@@ -321,10 +414,10 @@
                                         </div>
                                         <button 
                                             onClick={saveCharacter}
-                                            disabled={!newChar.name}
-                                            className="w-full bg-blue-600 py-4 rounded-2xl font-black text-lg shadow-lg shadow-blue-900/40 hover:bg-blue-500 disabled:opacity-50 transition-all"
+                                            disabled={!newChar.name || isProcessingImage}
+                                            className="w-full bg-blue-600 py-4 rounded-2xl font-black text-lg shadow-lg shadow-blue-900/40 hover:bg-blue-500 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                                         >
-                                            保存
+                                            {isProcessingImage ? '処理中...' : '保存'}
                                         </button>
                                     </div>
                                 </div>
