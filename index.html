@@ -225,7 +225,14 @@
 
             // Actions
             const saveCharacter = async () => {
-                if (!newChar.name || !user) return;
+                if (!newChar.name) return;
+                
+                // 認証チェックを追加：ユーザーがいない場合はアラートを出して処理を中断
+                if (!user) {
+                    alert("【エラー】ログインできていません。\n・ページをリロードしてみてください\n・インターネット接続を確認してください");
+                    return;
+                }
+
                 try {
                     const charCol = collection(db, 'artifacts', appId, 'public', 'data', 'characters');
                     await addDoc(charCol, {
@@ -234,9 +241,10 @@
                         createdBy: user.uid
                     });
                     setNewChar({ name: '', imageUrl: '', tags: [] });
+                    alert("保存しました！"); // 成功時のフィードバック
                 } catch (err) {
                     console.error("Save error:", err);
-                    alert("保存に失敗しました。Firestoreのルール設定や画像サイズを確認してください。");
+                    alert(`保存に失敗しました。\nエラー内容: ${err.message}\n(画像のサイズが大きすぎるか、データベースの権限設定を確認してください)`);
                 }
             };
 
