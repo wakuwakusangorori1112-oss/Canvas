@@ -1,418 +1,459 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInWithCustomToken, 
-  signInAnonymously, 
-  onAuthStateChanged 
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  setDoc, 
-  addDoc, 
-  getDocs, 
-  onSnapshot, 
-  query, 
-  deleteDoc 
-} from 'firebase/firestore';
-import { 
-  Plus, 
-  Trash2, 
-  Tag, 
-  BarChart3, 
-  Play, 
-  Settings, 
-  RotateCcw, 
-  Frown, 
-  Smile, 
-  Meh, 
-  AlertCircle, 
-  CheckCircle2, 
-  X,
-  Search,
-  User,
-  Share2
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Character Analyzer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Babel (JSX変換用) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Import Map: ライブラリの読み込み先を定義 -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.344.0",
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"
+      }
+    }
+    </script>
+</head>
+<body class="bg-slate-900 text-white">
+    <div id="root"></div>
 
-// --- Firebase Configuration ---
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'char-analyzer-app';
+    <script type="text/babel" data-type="module">
+        import React, { useState, useMemo, useEffect, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { initializeApp } from 'firebase/app';
+        import { 
+            getAuth, 
+            signInWithCustomToken,
+            signInAnonymously, 
+            onAuthStateChanged 
+        } from 'firebase/auth';
+        import { 
+            getFirestore, 
+            collection, 
+            doc, 
+            addDoc, 
+            onSnapshot, 
+            deleteDoc 
+        } from 'firebase/firestore';
+        import { 
+            Plus, Trash2, Tag, BarChart3, Play, Settings, RotateCcw, 
+            Frown, Smile, Meh, AlertCircle, CheckCircle2, X, Search, User, Share2 
+        } from 'lucide-react';
 
-const App = () => {
-  const [user, setUser] = useState(null);
-  const [characters, setCharacters] = useState([]);
-  const [results, setResults] = useState([]);
-  const [mode, setMode] = useState('setup'); // 'setup', 'swipe', 'analysis'
-  const [swipeIndex, setSwipeIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
+        // ==========================================
+        // Firebase設定ロジック
+        // ==========================================
+        let firebaseConfig;
+        let appId = 'char-analyzer-public';
 
-  // スワイプアニメーション用
-  const [offsetX, setOffsetX] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  const startX = useRef(0);
-
-  // フォーム用
-  const [newChar, setNewChar] = useState({ name: '', imageUrl: '', tags: [] });
-  const suggestedTags = ["不気味の谷", "目が笑っていない", "色が派手すぎ", "プロポーションが歪", "あざとい", "無機質", "人間味がありすぎ", "左右非対称"];
-
-  // 1. Authentication
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
+        // 1. Canvasプレビュー環境変数のチェック
+        if (typeof __firebase_config !== 'undefined') {
+            try {
+                firebaseConfig = JSON.parse(__firebase_config);
+                if (typeof __app_id !== 'undefined') appId = __app_id;
+            } catch (e) {
+                console.error("Config parse error", e);
+            }
         }
-      } catch (err) {
-        console.error("Auth error:", err);
-      }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 2. Real-time Data Sync (Characters & Results)
-  useEffect(() => {
-    if (!user) return;
-
-    // キャラクター一覧（共有データ）
-    const charCol = collection(db, 'artifacts', appId, 'public', 'data', 'characters');
-    const unsubChars = onSnapshot(charCol, (snapshot) => {
-      const charList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setCharacters(charList);
-    }, (err) => console.error("Firestore Error:", err));
-
-    // スワイプ結果（ユーザーごとの結果を共有。友達がやった結果をあなたが見るため）
-    const resultCol = collection(db, 'artifacts', appId, 'public', 'data', 'results');
-    const unsubResults = onSnapshot(resultCol, (snapshot) => {
-      const resultList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setResults(resultList);
-    }, (err) => console.error("Firestore Error:", err));
-
-    return () => {
-      unsubChars();
-      unsubResults();
-    };
-  }, [user]);
-
-  // --- Actions ---
-  const saveCharacter = async () => {
-    if (!newChar.name || !user) return;
-    try {
-      const charCol = collection(db, 'artifacts', appId, 'public', 'data', 'characters');
-      await addDoc(charCol, {
-        ...newChar,
-        createdAt: Date.now(),
-        createdBy: user.uid
-      });
-      setNewChar({ name: '', imageUrl: '', tags: [] });
-    } catch (err) {
-      console.error("Save error:", err);
-    }
-  };
-
-  const deleteCharacter = async (id) => {
-    try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'characters', id));
-    } catch (err) {
-      console.error("Delete error:", err);
-    }
-  };
-
-  const handleDecision = async (rating) => {
-    if (swipeIndex >= characters.length) return;
-    
-    const char = characters[swipeIndex];
-    
-    // スワイプアニメーション
-    setOffsetX(rating === 'like' ? 500 : -500);
-    
-    // Firestoreに結果を保存
-    try {
-      const resultCol = collection(db, 'artifacts', appId, 'public', 'data', 'results');
-      await addDoc(resultCol, {
-        characterId: char.id,
-        characterName: char.name,
-        tags: char.tags,
-        rating: rating,
-        userId: user.uid,
-        timestamp: Date.now()
-      });
-    } catch (err) {
-      console.error("Result save error:", err);
-    }
-
-    setTimeout(() => {
-      setOffsetX(0);
-      if (swipeIndex < characters.length - 1) {
-        setSwipeIndex(swipeIndex + 1);
-      } else {
-        setMode('analysis');
-      }
-    }, 200);
-  };
-
-  // スワイプ操作イベント
-  const onStart = (e) => {
-    setIsDragging(true);
-    startX.current = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-  };
-  const onMove = (e) => {
-    if (!isDragging) return;
-    const currentX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-    setOffsetX(currentX - startX.current);
-  };
-  const onEnd = () => {
-    if (!isDragging) return;
-    setIsDragging(false);
-    if (offsetX > 100) handleDecision('like');
-    else if (offsetX < -100) handleDecision('dislike');
-    else setOffsetX(0);
-  };
-
-  // --- Analysis Logic ---
-  const analysis = useMemo(() => {
-    // 自分の最新のセッション、もしくは全ユーザーの「苦手」を分析
-    const dislikeResults = results.filter(r => r.rating === 'dislike');
-    const tagCounts = {};
-    dislikeResults.forEach(r => {
-      r.tags?.forEach(tag => {
-        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-      });
-    });
-    return Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
-  }, [results]);
-
-  if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">読み込み中...</div>;
-
-  return (
-    <div className="min-h-screen bg-slate-900 text-white font-sans overflow-hidden flex flex-col">
-      {/* Navbar */}
-      <header className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/80 backdrop-blur-md z-30">
-        <h1 className="text-xl font-black tracking-tighter flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center italic">C</div>
-          CHAR-LAB
-        </h1>
-        <div className="flex bg-slate-800 p-1 rounded-xl">
-          <button onClick={() => setMode('setup')} className={`p-2 rounded-lg transition-all ${mode === 'setup' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><Settings size={20} /></button>
-          <button onClick={() => { setSwipeIndex(0); setMode('swipe'); }} className={`p-2 rounded-lg transition-all ${mode === 'swipe' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><Play size={20} /></button>
-          <button onClick={() => setMode('analysis')} className={`p-2 rounded-lg transition-all ${mode === 'analysis' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><BarChart3 size={20} /></button>
-        </div>
-      </header>
-
-      <main className="flex-1 relative flex flex-col items-center justify-center p-4 overflow-y-auto">
         
-        {/* SETUP MODE */}
-        {mode === 'setup' && (
-          <div className="w-full max-w-md space-y-6 pb-24">
-            <div className="bg-slate-800 p-6 rounded-3xl border border-slate-700 shadow-xl">
-              <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-blue-400">
-                <Plus size={20} /> 分析対象をクラウドに登録
-              </h2>
-              <div className="space-y-4">
-                <input 
-                  placeholder="キャラ名 (例: 〇〇の看板娘)"
-                  className="w-full bg-slate-700 border-none rounded-2xl p-4 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500"
-                  value={newChar.name}
-                  onChange={e => setNewChar({...newChar, name: e.target.value})}
-                />
-                <input 
-                  placeholder="画像URL (https://...)"
-                  className="w-full bg-slate-700 border-none rounded-2xl p-4 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500"
-                  value={newChar.imageUrl}
-                  onChange={e => setNewChar({...newChar, imageUrl: e.target.value})}
-                />
-                <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700">
-                  <p className="text-xs text-slate-400 mb-3 font-bold uppercase tracking-widest">特徴タグ（分析の鍵）</p>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {newChar.tags.map(t => (
-                      <span key={t} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-full flex items-center gap-2">
-                        {t} <X size={14} className="cursor-pointer" onClick={() => setNewChar({...newChar, tags: newChar.tags.filter(tag => tag !== t)})} />
-                      </span>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {suggestedTags.map(t => (
-                      <button 
-                        key={t}
-                        onClick={() => !newChar.tags.includes(t) && setNewChar({...newChar, tags: [...newChar.tags, t]})}
-                        className={`text-[11px] py-2 rounded-xl border transition-all ${newChar.tags.includes(t) ? 'bg-blue-600/20 border-blue-500 text-blue-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}`}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <button 
-                  onClick={saveCharacter}
-                  disabled={!newChar.name}
-                  className="w-full bg-blue-600 py-4 rounded-2xl font-black text-lg shadow-lg shadow-blue-900/40 hover:bg-blue-500 disabled:opacity-50 active:scale-95 transition-all"
-                >
-                  クラウドに保存
-                </button>
-              </div>
-            </div>
+        // 2. 環境変数がない場合（Vercel等の外部環境）、手動設定を使用
+        // ★★★ 外部公開時はここを書き換えてください ★★★
+        if (!firebaseConfig) {
+            firebaseConfig = {
+      apiKey: "AIzaSyCjLdydnVAYgHh0iKVtpskoy-W4HpFDDe4",
+      authDomain: "test1-7c377a.firebaseapp.com",
+      projectId: "test1-7c377a",
+      storageBucket: "test1-7c377a.firebasestorage.app",
+      messagingSenderId: "559194725567",
+      appId: "1:559194725567:web:d6a3109709fe62ee8fba0a"
+    };
+        }
 
-            <div className="space-y-3">
-              <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">登録済みライブラリ ({characters.length})</h3>
-              <div className="grid grid-cols-1 gap-3">
-                {characters.map(c => (
-                  <div key={c.id} className="bg-slate-800/50 p-3 rounded-2xl flex items-center gap-4 border border-slate-700/50 backdrop-blur-sm">
-                    <img src={c.imageUrl || "https://via.placeholder.com/150"} className="w-14 h-14 rounded-xl object-cover shadow-lg" alt="" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-sm truncate">{c.name}</p>
-                      <div className="flex gap-1 overflow-x-auto no-scrollbar mt-1">
-                        {c.tags?.map(t => <span key={t} className="text-[9px] text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded">#{t}</span>)}
-                      </div>
-                    </div>
-                    <button onClick={() => deleteCharacter(c.id)} className="p-2 text-slate-600 hover:text-red-400 transition-colors">
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
+        // 設定が正しくされているかチェック
+        const isConfigured = firebaseConfig.apiKey !== "API_KEY_HERE";
 
-        {/* SWIPE MODE */}
-        {mode === 'swipe' && (
-          swipeIndex < characters.length ? (
-            <div className="w-full max-w-sm h-[70vh] flex flex-col items-center justify-center relative">
-              <div className="relative w-full h-full">
-                {characters.slice(swipeIndex, swipeIndex + 2).reverse().map((char, i) => {
-                  const isTop = i === (characters.slice(swipeIndex, swipeIndex + 2).length - 1);
-                  return (
-                    <div 
-                      key={char.id}
-                      className="absolute inset-0 bg-slate-800 rounded-[2.5rem] shadow-2xl border border-slate-700 overflow-hidden touch-none select-none transition-transform duration-200 ease-out"
-                      style={{
-                        transform: isTop 
-                          ? `translateX(${offsetX}px) rotate(${offsetX * 0.05}deg) scale(1)` 
-                          : `scale(0.92) translateY(20px)`,
-                        zIndex: isTop ? 20 : 10,
-                        opacity: isTop ? 1 : 0.4
-                      }}
-                      onMouseDown={isTop ? onStart : undefined}
-                      onMouseMove={isTop ? onMove : undefined}
-                      onMouseUp={isTop ? onEnd : undefined}
-                      onMouseLeave={isTop ? onEnd : undefined}
-                      onTouchStart={isTop ? onStart : undefined}
-                      onTouchMove={isTop ? onMove : undefined}
-                      onTouchEnd={isTop ? onEnd : undefined}
-                    >
-                      <img src={char.imageUrl || "https://via.placeholder.com/400x600"} className="w-full h-3/4 object-cover pointer-events-none" alt="" />
-                      <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-slate-900 via-slate-900/80 to-transparent">
-                        <h2 className="text-3xl font-black mb-2">{char.name}</h2>
-                        <div className="flex flex-wrap gap-2">
-                          {char.tags?.map(t => (
-                            <span key={t} className="text-[10px] bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-white/80 border border-white/5 font-bold uppercase tracking-wider">#{t}</span>
-                          ))}
-                        </div>
-                      </div>
+        // アプリの初期化
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-                      {isTop && offsetX > 50 && <div className="absolute top-12 left-8 border-4 border-green-500 text-green-500 font-black text-5xl p-2 rounded-2xl rotate-[-20deg]" style={{opacity: Math.min(offsetX/150, 1)}}>LIKE</div>}
-                      {isTop && offsetX < -50 && <div className="absolute top-12 right-8 border-4 border-red-500 text-red-500 font-black text-5xl p-2 rounded-2xl rotate-[20deg]" style={{opacity: Math.min(-offsetX/150, 1)}}>苦手</div>}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-8 mt-10">
-                <button onClick={() => handleDecision('dislike')} className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-red-500 shadow-2xl active:scale-90 transition-transform"><Frown size={40} /></button>
-                <button onClick={() => handleDecision('like')} className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-2xl active:scale-90 transition-transform"><Smile size={40} /></button>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center space-y-4">
-              <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                <CheckCircle2 size={48} />
-              </div>
-              <h2 className="text-2xl font-black">仕分け完了！</h2>
-              <p className="text-slate-400">すべてのキャラクターをチェックしました。</p>
-              <button onClick={() => setMode('analysis')} className="px-8 py-4 bg-blue-600 rounded-2xl font-bold shadow-lg shadow-blue-900/40">分析結果を見る</button>
-            </div>
-          )
-        )}
-
-        {/* ANALYSIS MODE */}
-        {mode === 'analysis' && (
-          <div className="w-full max-w-md space-y-6 pb-24">
-            <div className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 shadow-2xl">
-              <div className="flex justify-between items-start mb-8">
-                <div>
-                  <h2 className="text-2xl font-black flex items-center gap-2">
-                    <AlertCircle className="text-red-400" /> 苦手傾向の分析
-                  </h2>
-                  <p className="text-slate-400 text-sm mt-1">全 {results.length} 件のデータから集計</p>
-                </div>
-                <button onClick={() => setMode('swipe')} className="p-2 text-slate-500 hover:text-white"><RotateCcw size={20} /></button>
-              </div>
-              
-              {analysis.length === 0 ? (
-                <div className="text-center py-10 text-slate-500">
-                  まだ「苦手」に分類されたデータがありません。
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {analysis.map(([tag, count]) => {
-                    const dislikeTotal = results.filter(r => r.rating === 'dislike').length;
-                    const percent = Math.round((count / dislikeTotal) * 100);
-                    return (
-                      <div key={tag} className="group">
-                        <div className="flex justify-between text-sm mb-2">
-                          <span className="font-black tracking-tight text-slate-200">{tag}</span>
-                          <span className="text-slate-500 font-mono">{percent}%</span>
-                        </div>
-                        <div className="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-slate-700">
-                          <div className="bg-gradient-to-r from-red-600 to-orange-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${percent}%` }}></div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  
-                  <div className="mt-10 p-6 bg-blue-600 rounded-3xl text-white shadow-xl shadow-blue-900/20 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-                    <h3 className="font-black text-xl mb-3 flex items-center gap-2">言語化のヒント</h3>
-                    <p className="text-sm text-blue-100 leading-relaxed">
-                      データによると、友達は特に「<span className="underline decoration-2 underline-offset-4 font-black text-white">{analysis[0][0]}</span>」という要素に強い反応を示しています。
-                      次にキャラを見た時、この要素がどう作用しているか聞いてみてください。
+        // --- 設定未完了時の画面コンポーネント ---
+        const SetupGuide = () => (
+            <div className="min-h-screen flex items-center justify-center p-4 bg-slate-900">
+                <div className="bg-slate-800 p-8 rounded-2xl max-w-lg w-full border border-slate-700 shadow-2xl">
+                    <h2 className="text-2xl font-bold mb-4 text-blue-400 flex items-center gap-2">
+                        <Settings /> 設定が必要です
+                    </h2>
+                    <p className="mb-4 text-slate-300">
+                        アプリを動かすために、Firebaseとの連携設定が必要です。
                     </p>
-                  </div>
+                    <div className="bg-slate-900 p-4 rounded-lg font-mono text-xs text-green-400 overflow-x-auto mb-4 border border-slate-700">
+                        const firebaseConfig = &#123;<br/>
+                        &nbsp;&nbsp;apiKey: "あなたのAPIキー",<br/>
+                        &nbsp;&nbsp;authDomain: "..."<br/>
+                        &nbsp;&nbsp;...<br/>
+                        &#125;;
+                    </div>
+                    <p className="text-sm text-slate-400">
+                        このファイルの <code>firebaseConfig</code> の部分を、あなたのFirebaseプロジェクトの設定で書き換えて保存してください。
+                    </p>
                 </div>
-              )}
             </div>
+        );
 
-            {/* User ID display for sharing */}
-            <div className="p-4 bg-slate-900 rounded-2xl border border-slate-800 flex items-center justify-between text-[10px] text-slate-500 uppercase tracking-widest font-bold">
-              <div className="flex items-center gap-2">
-                <User size={12} /> User: {user.uid}
-              </div>
-              <div className="flex items-center gap-2 text-blue-400">
-                <Share2 size={12} /> URLを共有して友達にスワイプしてもらおう
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [characters, setCharacters] = useState([]);
+            const [results, setResults] = useState([]);
+            const [mode, setMode] = useState('setup');
+            const [swipeIndex, setSwipeIndex] = useState(0);
+            const [loading, setLoading] = useState(true);
 
-      {/* Persistent Footer */}
-      <footer className="p-4 bg-slate-900/80 backdrop-blur-md border-t border-slate-800 text-center text-[10px] text-slate-600 font-bold uppercase tracking-[0.2em]">
-        Experimental Character Psychology Tool
-      </footer>
-    </div>
-  );
-};
+            // スワイプアニメーション用
+            const [offsetX, setOffsetX] = useState(0);
+            const [isDragging, setIsDragging] = useState(false);
+            const startX = useRef(0);
 
-export default App;
+            // フォーム用
+            const [newChar, setNewChar] = useState({ name: '', imageUrl: '', tags: [] });
+            const suggestedTags = ["不気味の谷", "目が笑っていない", "色が派手すぎ", "プロポーションが歪", "あざとい", "無機質", "人間味がありすぎ", "左右非対称"];
+
+            // 1. Authentication
+            useEffect(() => {
+                if (!isConfigured) return;
+
+                const initAuth = async () => {
+                    try {
+                        // プレビュー環境でのカスタムトークン対応
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                             await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                             await signInAnonymously(auth);
+                        }
+                    } catch (err) {
+                        console.error("Auth error:", err);
+                    }
+                };
+                initAuth();
+                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                    setUser(user);
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // 2. Real-time Data Sync
+            useEffect(() => {
+                if (!user || !isConfigured) return;
+
+                const charCol = collection(db, 'artifacts', appId, 'public', 'data', 'characters');
+                const unsubChars = onSnapshot(charCol, (snapshot) => {
+                    const charList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setCharacters(charList);
+                }, (err) => console.error("Firestore Error:", err));
+
+                const resultCol = collection(db, 'artifacts', appId, 'public', 'data', 'results');
+                const unsubResults = onSnapshot(resultCol, (snapshot) => {
+                    const resultList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setResults(resultList);
+                }, (err) => console.error("Firestore Error:", err));
+
+                return () => {
+                    unsubChars();
+                    unsubResults();
+                };
+            }, [user]);
+
+            // Actions
+            const saveCharacter = async () => {
+                if (!newChar.name || !user) return;
+                try {
+                    const charCol = collection(db, 'artifacts', appId, 'public', 'data', 'characters');
+                    await addDoc(charCol, {
+                        ...newChar,
+                        createdAt: Date.now(),
+                        createdBy: user.uid
+                    });
+                    setNewChar({ name: '', imageUrl: '', tags: [] });
+                } catch (err) {
+                    console.error("Save error:", err);
+                    alert("保存に失敗しました。Firestoreのルール設定を確認してください。");
+                }
+            };
+
+            const deleteCharacter = async (id) => {
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'characters', id));
+                } catch (err) {
+                    console.error("Delete error:", err);
+                }
+            };
+
+            const handleDecision = async (rating) => {
+                if (swipeIndex >= characters.length) return;
+                const char = characters[swipeIndex];
+                
+                setOffsetX(rating === 'like' ? 500 : -500);
+                
+                try {
+                    const resultCol = collection(db, 'artifacts', appId, 'public', 'data', 'results');
+                    await addDoc(resultCol, {
+                        characterId: char.id,
+                        characterName: char.name,
+                        tags: char.tags,
+                        rating: rating,
+                        userId: user.uid,
+                        timestamp: Date.now()
+                    });
+                } catch (err) {
+                    console.error("Result save error:", err);
+                }
+
+                setTimeout(() => {
+                    setOffsetX(0);
+                    if (swipeIndex < characters.length - 1) {
+                        setSwipeIndex(swipeIndex + 1);
+                    } else {
+                        setMode('analysis');
+                    }
+                }, 200);
+            };
+
+            // スワイプイベント
+            const onStart = (e) => {
+                setIsDragging(true);
+                startX.current = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            };
+            const onMove = (e) => {
+                if (!isDragging) return;
+                const currentX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+                setOffsetX(currentX - startX.current);
+            };
+            const onEnd = () => {
+                if (!isDragging) return;
+                setIsDragging(false);
+                if (offsetX > 100) handleDecision('like');
+                else if (offsetX < -100) handleDecision('dislike');
+                else setOffsetX(0);
+            };
+
+            // 分析ロジック
+            const analysis = useMemo(() => {
+                const dislikeResults = results.filter(r => r.rating === 'dislike');
+                const tagCounts = {};
+                dislikeResults.forEach(r => {
+                    r.tags?.forEach(tag => {
+                        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                    });
+                });
+                return Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+            }, [results]);
+
+            // Config check
+            if (!isConfigured) return <SetupGuide />;
+            if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">読み込み中...</div>;
+
+            return (
+                <div className="min-h-screen bg-slate-900 text-white font-sans overflow-hidden flex flex-col">
+                    <header className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/80 backdrop-blur-md z-30">
+                        <h1 className="text-xl font-black tracking-tighter flex items-center gap-2">
+                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center italic">C</div>
+                            CHAR-LAB
+                        </h1>
+                        <div className="flex bg-slate-800 p-1 rounded-xl">
+                            <button onClick={() => setMode('setup')} className={`p-2 rounded-lg transition-all ${mode === 'setup' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><Settings size={20} /></button>
+                            <button onClick={() => { setSwipeIndex(0); setMode('swipe'); }} className={`p-2 rounded-lg transition-all ${mode === 'swipe' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><Play size={20} /></button>
+                            <button onClick={() => setMode('analysis')} className={`p-2 rounded-lg transition-all ${mode === 'analysis' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><BarChart3 size={20} /></button>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 relative flex flex-col items-center justify-center p-4 overflow-y-auto">
+                        
+                        {/* SETUP MODE */}
+                        {mode === 'setup' && (
+                            <div className="w-full max-w-md space-y-6 pb-24">
+                                <div className="bg-slate-800 p-6 rounded-3xl border border-slate-700 shadow-xl">
+                                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-blue-400">
+                                        <Plus size={20} /> 分析対象を登録
+                                    </h2>
+                                    <div className="space-y-4">
+                                        <input 
+                                            placeholder="キャラ名"
+                                            className="w-full bg-slate-700 border-none rounded-2xl p-4 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500"
+                                            value={newChar.name}
+                                            onChange={e => setNewChar({...newChar, name: e.target.value})}
+                                        />
+                                        <input 
+                                            placeholder="画像URL (https://...)"
+                                            className="w-full bg-slate-700 border-none rounded-2xl p-4 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500"
+                                            value={newChar.imageUrl}
+                                            onChange={e => setNewChar({...newChar, imageUrl: e.target.value})}
+                                        />
+                                        <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700">
+                                            <p className="text-xs text-slate-400 mb-3 font-bold uppercase tracking-widest">特徴タグ</p>
+                                            <div className="flex flex-wrap gap-2 mb-4">
+                                                {newChar.tags.map(t => (
+                                                    <span key={t} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-full flex items-center gap-2">
+                                                        {t} <X size={14} className="cursor-pointer" onClick={() => setNewChar({...newChar, tags: newChar.tags.filter(tag => tag !== t)})} />
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {suggestedTags.map(t => (
+                                                    <button 
+                                                        key={t}
+                                                        onClick={() => !newChar.tags.includes(t) && setNewChar({...newChar, tags: [...newChar.tags, t]})}
+                                                        className={`text-[11px] py-2 rounded-xl border transition-all ${newChar.tags.includes(t) ? 'bg-blue-600/20 border-blue-500 text-blue-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}`}
+                                                    >
+                                                        {t}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <button 
+                                            onClick={saveCharacter}
+                                            disabled={!newChar.name}
+                                            className="w-full bg-blue-600 py-4 rounded-2xl font-black text-lg shadow-lg shadow-blue-900/40 hover:bg-blue-500 disabled:opacity-50 transition-all"
+                                        >
+                                            保存
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">登録済み ({characters.length})</h3>
+                                    <div className="grid grid-cols-1 gap-3">
+                                        {characters.map(c => (
+                                            <div key={c.id} className="bg-slate-800/50 p-3 rounded-2xl flex items-center gap-4 border border-slate-700/50">
+                                                <img src={c.imageUrl || "https://via.placeholder.com/150"} className="w-14 h-14 rounded-xl object-cover" />
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-bold text-sm truncate">{c.name}</p>
+                                                    <div className="flex gap-1 overflow-x-auto no-scrollbar mt-1">
+                                                        {c.tags?.map(t => <span key={t} className="text-[9px] text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded">#{t}</span>)}
+                                                    </div>
+                                                </div>
+                                                <button onClick={() => deleteCharacter(c.id)} className="p-2 text-slate-600 hover:text-red-400">
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* SWIPE MODE */}
+                        {mode === 'swipe' && (
+                            swipeIndex < characters.length ? (
+                                <div className="w-full max-w-sm h-[70vh] flex flex-col items-center justify-center relative">
+                                    <div className="relative w-full h-full">
+                                        {characters.slice(swipeIndex, swipeIndex + 2).reverse().map((char, i) => {
+                                            const isTop = i === (characters.slice(swipeIndex, swipeIndex + 2).length - 1);
+                                            return (
+                                                <div 
+                                                    key={char.id}
+                                                    className="absolute inset-0 bg-slate-800 rounded-[2.5rem] shadow-2xl border border-slate-700 overflow-hidden touch-none select-none transition-transform duration-200 ease-out"
+                                                    style={{
+                                                        transform: isTop 
+                                                            ? `translateX(${offsetX}px) rotate(${offsetX * 0.05}deg) scale(1)` 
+                                                            : `scale(0.92) translateY(20px)`,
+                                                        zIndex: isTop ? 20 : 10,
+                                                        opacity: isTop ? 1 : 0.4
+                                                    }}
+                                                    onMouseDown={isTop ? onStart : undefined}
+                                                    onMouseMove={isTop ? onMove : undefined}
+                                                    onMouseUp={isTop ? onEnd : undefined}
+                                                    onMouseLeave={isTop ? onEnd : undefined}
+                                                    onTouchStart={isTop ? onStart : undefined}
+                                                    onTouchMove={isTop ? onMove : undefined}
+                                                    onTouchEnd={isTop ? onEnd : undefined}
+                                                >
+                                                    <img src={char.imageUrl || "https://via.placeholder.com/400x600"} className="w-full h-3/4 object-cover pointer-events-none" />
+                                                    <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-slate-900 via-slate-900/80 to-transparent">
+                                                        <h2 className="text-3xl font-black mb-2">{char.name}</h2>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {char.tags?.map(t => (
+                                                                <span key={t} className="text-[10px] bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-white/80 border border-white/5 font-bold uppercase tracking-wider">#{t}</span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    {isTop && offsetX > 50 && <div className="absolute top-12 left-8 border-4 border-green-500 text-green-500 font-black text-5xl p-2 rounded-2xl rotate-[-20deg]" style={{opacity: Math.min(offsetX/150, 1)}}>LIKE</div>}
+                                                    {isTop && offsetX < -50 && <div className="absolute top-12 right-8 border-4 border-red-500 text-red-500 font-black text-5xl p-2 rounded-2xl rotate-[20deg]" style={{opacity: Math.min(-offsetX/150, 1)}}>苦手</div>}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="flex gap-8 mt-10">
+                                        <button onClick={() => handleDecision('dislike')} className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-red-500 shadow-2xl active:scale-90 transition-transform"><Frown size={40} /></button>
+                                        <button onClick={() => handleDecision('like')} className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-2xl active:scale-90 transition-transform"><Smile size={40} /></button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-center space-y-4">
+                                    <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                                        <CheckCircle2 size={48} />
+                                    </div>
+                                    <h2 className="text-2xl font-black">完了！</h2>
+                                    <button onClick={() => setMode('analysis')} className="px-8 py-4 bg-blue-600 rounded-2xl font-bold shadow-lg">分析を見る</button>
+                                </div>
+                            )
+                        )}
+
+                        {/* ANALYSIS MODE */}
+                        {mode === 'analysis' && (
+                            <div className="w-full max-w-md space-y-6 pb-24">
+                                <div className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 shadow-2xl">
+                                    <div className="flex justify-between items-start mb-8">
+                                        <div>
+                                            <h2 className="text-2xl font-black flex items-center gap-2">
+                                                <AlertCircle className="text-red-400" /> 分析結果
+                                            </h2>
+                                            <p className="text-slate-400 text-sm mt-1">{results.length} 件のデータ</p>
+                                        </div>
+                                        <button onClick={() => setMode('swipe')} className="p-2 text-slate-500 hover:text-white"><RotateCcw size={20} /></button>
+                                    </div>
+                                    
+                                    {analysis.length === 0 ? (
+                                        <div className="text-center py-10 text-slate-500">データなし</div>
+                                    ) : (
+                                        <div className="space-y-6">
+                                            {analysis.map(([tag, count]) => {
+                                                const dislikeTotal = results.filter(r => r.rating === 'dislike').length;
+                                                const percent = dislikeTotal > 0 ? Math.round((count / dislikeTotal) * 100) : 0;
+                                                return (
+                                                    <div key={tag} className="group">
+                                                        <div className="flex justify-between text-sm mb-2">
+                                                            <span className="font-black tracking-tight text-slate-200">{tag}</span>
+                                                            <span className="text-slate-500 font-mono">{percent}%</span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-slate-700">
+                                                            <div className="bg-gradient-to-r from-red-600 to-orange-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${percent}%` }}></div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
