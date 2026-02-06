@@ -4,12 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Character Analyzer</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Babel (JSX変換用) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Import Map: ライブラリの読み込み先を定義 -->
     <script type="importmap">
     {
       "imports": {
@@ -47,58 +43,74 @@
         import { 
             Plus, Trash2, Tag, BarChart3, Play, Settings, RotateCcw, 
             Frown, Smile, Meh, AlertCircle, CheckCircle2, X, Search, User, Share2,
-            Image as ImageIcon, Upload
+            Image as ImageIcon, Upload, Wifi, WifiOff, Database, ExternalLink, Lock
         } from 'lucide-react';
 
-        // ==========================================
-        // Firebase設定ロジック
-        // ==========================================
-        let firebaseConfig;
-        let appId = 'char-analyzer-public';
+        // --- Firebase Configuration ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCjLdydnVAYgHh0iKVtpskoy-W4HpFDDe4",
+            authDomain: "test1-7c377a.firebaseapp.com",
+            projectId: "test1-7c377a",
+            storageBucket: "test1-7c377a.firebasestorage.app",
+            messagingSenderId: "559194725567",
+            appId: "1:559194725567:web:d6a3109709fe62ee8fba0a"
+        };
 
-        // 1. Canvasプレビュー環境変数のチェック（開発環境用）
-        if (typeof __firebase_config !== 'undefined') {
-            try {
-                firebaseConfig = JSON.parse(__firebase_config);
-                if (typeof __app_id !== 'undefined') appId = __app_id;
-            } catch (e) {
-                console.error("Config parse error", e);
-            }
-        }
-        
-        // 2. 本番環境用設定（提供された情報を適用済み）
-        if (!firebaseConfig) {
-            firebaseConfig = {
-                apiKey: "AIzaSyCjLdydnVAYgHh0iKVtpskoy-W4HpFDDe4",
-                authDomain: "test1-7c377a.firebaseapp.com",
-                projectId: "test1-7c377a",
-                storageBucket: "test1-7c377a.firebasestorage.app",
-                messagingSenderId: "559194725567",
-                appId: "1:559194725567:web:d6a3109709fe62ee8fba0a"
-            };
-        }
-
-        // 設定が完了しているとみなす
-        const isConfigured = true;
-
-        // アプリの初期化
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        const appId = 'char-analyzer-public'; 
 
-        // --- 設定未完了時の画面コンポーネント ---
-        const SetupGuide = () => (
-            <div className="min-h-screen flex items-center justify-center p-4 bg-slate-900">
-                <div className="bg-slate-800 p-8 rounded-2xl max-w-lg w-full border border-slate-700 shadow-2xl">
-                    <h2 className="text-2xl font-bold mb-4 text-blue-400 flex items-center gap-2">
-                        <Settings /> 設定が必要です
-                    </h2>
-                    <p className="mb-4 text-slate-300">
-                        Firebaseの設定情報を読み込めませんでした。
-                    </p>
-                </div>
-            </div>
-        );
+        // --- エラーガイドコンポーネント ---
+        const CriticalErrorGuide = ({ type }) => {
+            if (type === 'firestore_not_created') {
+                return (
+                    <div className="fixed inset-0 bg-slate-900 z-50 flex flex-col items-center justify-center p-8 text-center overflow-y-auto">
+                        <div className="bg-slate-800 p-8 rounded-3xl max-w-lg border border-red-500/30 shadow-2xl">
+                            <div className="w-20 h-20 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <Database size={40} />
+                            </div>
+                            <h2 className="text-2xl font-bold mb-4">データベースが見つかりません</h2>
+                            <p className="text-slate-300 mb-6 leading-relaxed">
+                                Firebaseコンソールでデータベースを作成してください。<br/>
+                                作成済みの場合、反映に数分かかることがあります。
+                            </p>
+                            <button onClick={() => window.location.reload()} className="w-full py-3 bg-blue-600 rounded-xl font-bold hover:bg-blue-500 transition-colors">
+                                再読み込み
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+            if (type === 'permission_denied') {
+                return (
+                    <div className="fixed inset-0 bg-slate-900 z-50 flex flex-col items-center justify-center p-8 text-center overflow-y-auto">
+                        <div className="bg-slate-800 p-8 rounded-3xl max-w-lg border border-yellow-500/30 shadow-2xl">
+                            <div className="w-20 h-20 bg-yellow-500/20 text-yellow-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <Lock size={40} />
+                            </div>
+                            <h2 className="text-2xl font-bold mb-4">書き込み権限がありません</h2>
+                            <p className="text-slate-300 mb-4 leading-relaxed text-sm">
+                                データベース作成時に「本番モード」を選んだ可能性があります。<br/>
+                                以下の手順で「テストモード」に変更してください。
+                            </p>
+                            <div className="bg-slate-900 text-left p-6 rounded-xl border border-slate-700 text-xs space-y-2 mb-6 font-mono text-slate-400">
+                                <p>1. Firebaseコンソールの「Firestore Database」を開く</p>
+                                <p>2. 上部の<strong>「ルール (Rules)」</strong>タブをクリック</p>
+                                <p>3. 以下のコードに書き換えて「公開」を押す：</p>
+                                <div className="bg-black p-2 rounded text-green-400 my-2">
+                                    allow read, write: if true;
+                                </div>
+                            </div>
+                            <button onClick={() => window.location.reload()} className="w-full py-3 bg-yellow-600 rounded-xl font-bold hover:bg-yellow-500 transition-colors">
+                                設定したら再読み込み
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+            return null;
+        };
 
         const App = () => {
             const [user, setUser] = useState(null);
@@ -108,8 +120,10 @@
             const [swipeIndex, setSwipeIndex] = useState(0);
             const [loading, setLoading] = useState(true);
             const [isProcessingImage, setIsProcessingImage] = useState(false);
+            const [authError, setAuthError] = useState(null);
+            const [criticalError, setCriticalError] = useState(null);
 
-            // スワイプアニメーション用
+            // スワイプ用
             const [offsetX, setOffsetX] = useState(0);
             const [isDragging, setIsDragging] = useState(false);
             const startX = useRef(0);
@@ -121,23 +135,21 @@
 
             // 1. Authentication
             useEffect(() => {
-                if (!isConfigured) return;
-
                 const initAuth = async () => {
                     try {
-                        // プレビュー環境でのカスタムトークン対応
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                             await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                             await signInAnonymously(auth);
-                        }
+                        await signInAnonymously(auth);
                     } catch (err) {
                         console.error("Auth error:", err);
+                        if (err.code === 'auth/operation-not-allowed' || err.code === 'auth/admin-restricted-operation') {
+                            setAuthError("Firebaseコンソールで「匿名ログイン(Anonymous)」が無効になっています。有効にしてください。");
+                        } else {
+                            setAuthError(`接続エラー: ${err.message}`);
+                        }
                     }
                 };
                 initAuth();
                 const unsubscribe = onAuthStateChanged(auth, (user) => {
-                    setUser(user);
+                    if (user) setUser(user);
                     setLoading(false);
                 });
                 return () => unsubscribe();
@@ -145,19 +157,33 @@
 
             // 2. Real-time Data Sync
             useEffect(() => {
-                if (!user || !isConfigured) return;
+                if (!user) return;
+
+                const handleError = (err) => {
+                    console.error("Firestore Error:", err);
+                    if (err.message && err.message.includes("Cloud Firestore API has not been used")) {
+                        setCriticalError("firestore_not_created");
+                    } else if (err.code === 'permission-denied') {
+                        // 権限エラーの場合、専用のガイド画面を出すように変更
+                        setCriticalError("permission_denied");
+                    } else {
+                        setAuthError(`読み込みエラー: ${err.message}`);
+                    }
+                };
 
                 const charCol = collection(db, 'artifacts', appId, 'public', 'data', 'characters');
                 const unsubChars = onSnapshot(charCol, (snapshot) => {
                     const charList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setCharacters(charList);
-                }, (err) => console.error("Firestore Error:", err));
+                    setAuthError(null);
+                    setCriticalError(null); // 成功したらエラー解除
+                }, handleError);
 
                 const resultCol = collection(db, 'artifacts', appId, 'public', 'data', 'results');
                 const unsubResults = onSnapshot(resultCol, (snapshot) => {
                     const resultList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setResults(resultList);
-                }, (err) => console.error("Firestore Error:", err));
+                }, handleError);
 
                 return () => {
                     unsubChars();
@@ -165,7 +191,7 @@
                 };
             }, [user]);
 
-            // 画像処理（圧縮してBase64化）
+            // 画像処理
             const processImage = (file) => {
                 return new Promise((resolve, reject) => {
                     const reader = new FileReader();
@@ -174,30 +200,18 @@
                         img.onload = () => {
                             const canvas = document.createElement('canvas');
                             const ctx = canvas.getContext('2d');
-                            
-                            // リサイズ設定 (最大長辺 600px)
-                            const MAX_SIZE = 600;
+                            const MAX_SIZE = 400; 
                             let width = img.width;
                             let height = img.height;
-                            
                             if (width > height) {
-                                if (width > MAX_SIZE) {
-                                    height *= MAX_SIZE / width;
-                                    width = MAX_SIZE;
-                                }
+                                if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
                             } else {
-                                if (height > MAX_SIZE) {
-                                    width *= MAX_SIZE / height;
-                                    height = MAX_SIZE;
-                                }
+                                if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
                             }
-                            
                             canvas.width = width;
                             canvas.height = height;
                             ctx.drawImage(img, 0, 0, width, height);
-                            
-                            // 圧縮 (JPEG quality 0.7)
-                            resolve(canvas.toDataURL('image/jpeg', 0.7));
+                            resolve(canvas.toDataURL('image/jpeg', 0.6));
                         };
                         img.onerror = reject;
                         img.src = e.target.result;
@@ -210,13 +224,11 @@
             const handleFileChange = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                
                 try {
                     setIsProcessingImage(true);
                     const base64Image = await processImage(file);
                     setNewChar(prev => ({ ...prev, imageUrl: base64Image }));
                 } catch (err) {
-                    console.error("Image processing error:", err);
                     alert("画像の処理に失敗しました。");
                 } finally {
                     setIsProcessingImage(false);
@@ -226,25 +238,26 @@
             // Actions
             const saveCharacter = async () => {
                 if (!newChar.name) return;
-                
-                // 認証チェックを追加：ユーザーがいない場合はアラートを出して処理を中断
                 if (!user) {
-                    alert("【エラー】ログインできていません。\n・ページをリロードしてみてください\n・インターネット接続を確認してください");
+                    alert(authError || "ログイン処理中です。数秒待ってから再度お試しください。");
                     return;
                 }
-
                 try {
                     const charCol = collection(db, 'artifacts', appId, 'public', 'data', 'characters');
-                    await addDoc(charCol, {
-                        ...newChar,
-                        createdAt: Date.now(),
-                        createdBy: user.uid
-                    });
+                    await addDoc(charCol, { ...newChar, createdAt: Date.now(), createdBy: user.uid });
                     setNewChar({ name: '', imageUrl: '', tags: [] });
-                    alert("保存しました！"); // 成功時のフィードバック
+                    alert("保存しました！");
                 } catch (err) {
                     console.error("Save error:", err);
-                    alert(`保存に失敗しました。\nエラー内容: ${err.message}\n(画像のサイズが大きすぎるか、データベースの権限設定を確認してください)`);
+                    if (err.message.includes("exceeds the maximum allowed size")) {
+                        alert("画像サイズが大きすぎます。別の画像を試してください。");
+                    } else if (err.message.includes("Cloud Firestore API has not been used")) {
+                         setCriticalError("firestore_not_created");
+                    } else if (err.code === 'permission-denied') {
+                         setCriticalError("permission_denied");
+                    } else {
+                        alert(`保存失敗: ${err.message}`);
+                    }
                 }
             };
 
@@ -259,65 +272,46 @@
             const handleDecision = async (rating) => {
                 if (swipeIndex >= characters.length) return;
                 const char = characters[swipeIndex];
-                
                 setOffsetX(rating === 'like' ? 500 : -500);
                 
-                try {
-                    const resultCol = collection(db, 'artifacts', appId, 'public', 'data', 'results');
-                    await addDoc(resultCol, {
-                        characterId: char.id,
-                        characterName: char.name,
-                        tags: char.tags,
-                        rating: rating,
-                        userId: user.uid,
-                        timestamp: Date.now()
-                    });
-                } catch (err) {
-                    console.error("Result save error:", err);
+                if (user) {
+                    try {
+                        const resultCol = collection(db, 'artifacts', appId, 'public', 'data', 'results');
+                        await addDoc(resultCol, {
+                            characterId: char.id,
+                            characterName: char.name,
+                            tags: char.tags,
+                            rating: rating,
+                            userId: user.uid,
+                            timestamp: Date.now()
+                        });
+                    } catch (err) {
+                        console.error("Result save error:", err);
+                    }
                 }
 
                 setTimeout(() => {
                     setOffsetX(0);
                     if (swipeIndex < characters.length - 1) {
-                        setSwipeIndex(swipeIndex + 1);
+                        setSwipeIndex(prev => prev + 1);
                     } else {
                         setMode('analysis');
                     }
                 }, 200);
             };
 
-            // スワイプイベント
-            const onStart = (e) => {
-                setIsDragging(true);
-                startX.current = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-            };
-            const onMove = (e) => {
-                if (!isDragging) return;
-                const currentX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-                setOffsetX(currentX - startX.current);
-            };
-            const onEnd = () => {
-                if (!isDragging) return;
-                setIsDragging(false);
-                if (offsetX > 100) handleDecision('like');
-                else if (offsetX < -100) handleDecision('dislike');
-                else setOffsetX(0);
-            };
+            const onStart = (e) => { setIsDragging(true); startX.current = e.type.includes('touch') ? e.touches[0].clientX : e.clientX; };
+            const onMove = (e) => { if (!isDragging) return; const currentX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX; setOffsetX(currentX - startX.current); };
+            const onEnd = () => { if (!isDragging) return; setIsDragging(false); if (offsetX > 100) handleDecision('like'); else if (offsetX < -100) handleDecision('dislike'); else setOffsetX(0); };
 
-            // 分析ロジック
             const analysis = useMemo(() => {
                 const dislikeResults = results.filter(r => r.rating === 'dislike');
                 const tagCounts = {};
-                dislikeResults.forEach(r => {
-                    r.tags?.forEach(tag => {
-                        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-                    });
-                });
+                dislikeResults.forEach(r => { r.tags?.forEach(tag => { tagCounts[tag] = (tagCounts[tag] || 0) + 1; }); });
                 return Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
             }, [results]);
 
-            // Config check
-            if (!isConfigured) return <SetupGuide />;
+            if (criticalError) return <CriticalErrorGuide type={criticalError} />;
             if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">読み込み中...</div>;
 
             return (
@@ -327,16 +321,33 @@
                             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center italic">C</div>
                             CHAR-LAB
                         </h1>
-                        <div className="flex bg-slate-800 p-1 rounded-xl">
-                            <button onClick={() => setMode('setup')} className={`p-2 rounded-lg transition-all ${mode === 'setup' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><Settings size={20} /></button>
-                            <button onClick={() => { setSwipeIndex(0); setMode('swipe'); }} className={`p-2 rounded-lg transition-all ${mode === 'swipe' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><Play size={20} /></button>
-                            <button onClick={() => setMode('analysis')} className={`p-2 rounded-lg transition-all ${mode === 'analysis' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><BarChart3 size={20} /></button>
+                        <div className="flex items-center gap-2">
+                            {user ? (
+                                <div className="text-xs text-green-400 flex items-center gap-1 bg-green-900/20 px-2 py-1 rounded-full border border-green-900">
+                                    <Wifi size={12} /> Online
+                                </div>
+                            ) : (
+                                <div className="text-xs text-red-400 flex items-center gap-1 bg-red-900/20 px-2 py-1 rounded-full border border-red-900 animate-pulse">
+                                    <WifiOff size={12} /> Connecting...
+                                </div>
+                            )}
+                            <div className="flex bg-slate-800 p-1 rounded-xl ml-2">
+                                <button onClick={() => setMode('setup')} className={`p-2 rounded-lg transition-all ${mode === 'setup' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><Settings size={20} /></button>
+                                <button onClick={() => { setSwipeIndex(0); setMode('swipe'); }} className={`p-2 rounded-lg transition-all ${mode === 'swipe' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><Play size={20} /></button>
+                                <button onClick={() => setMode('analysis')} className={`p-2 rounded-lg transition-all ${mode === 'analysis' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><BarChart3 size={20} /></button>
+                            </div>
                         </div>
                     </header>
 
+                    {authError && (
+                        <div className="bg-red-500/10 border-b border-red-500/50 p-2 text-center text-red-200 text-xs">
+                            <p className="font-bold flex items-center justify-center gap-2">
+                                <AlertCircle size={14} /> {authError}
+                            </p>
+                        </div>
+                    )}
+
                     <main className="flex-1 relative flex flex-col items-center justify-center p-4 overflow-y-auto">
-                        
-                        {/* SETUP MODE */}
                         {mode === 'setup' && (
                             <div className="w-full max-w-md space-y-6 pb-24">
                                 <div className="bg-slate-800 p-6 rounded-3xl border border-slate-700 shadow-xl">
@@ -350,55 +361,30 @@
                                             value={newChar.name}
                                             onChange={e => setNewChar({...newChar, name: e.target.value})}
                                         />
-                                        
-                                        {/* 画像アップロード & URL入力 */}
                                         <div className="space-y-2">
                                             <div className="flex gap-2">
                                                 <input 
-                                                    placeholder="画像URL (https://...)"
+                                                    placeholder="画像URL"
                                                     className="flex-1 bg-slate-700 border-none rounded-2xl p-4 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 text-sm"
                                                     value={newChar.imageUrl.startsWith('data:') ? '' : newChar.imageUrl}
                                                     onChange={e => setNewChar({...newChar, imageUrl: e.target.value})}
                                                     disabled={newChar.imageUrl.startsWith('data:')}
                                                 />
-                                                <input
-                                                    type="file"
-                                                    ref={fileInputRef}
-                                                    onChange={handleFileChange}
-                                                    accept="image/*"
-                                                    className="hidden"
-                                                />
-                                                <button 
-                                                    onClick={() => fileInputRef.current?.click()}
-                                                    className="bg-slate-700 hover:bg-slate-600 text-slate-300 p-4 rounded-2xl transition-colors"
-                                                    title="画像をアップロード"
-                                                >
+                                                <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+                                                <button onClick={() => fileInputRef.current?.click()} className="bg-slate-700 hover:bg-slate-600 text-slate-300 p-4 rounded-2xl transition-colors" title="画像をアップロード">
                                                     <Upload size={20} />
                                                 </button>
                                             </div>
-                                            
-                                            {/* アップロード済みプレビュー */}
                                             {newChar.imageUrl && (
                                                 <div className="relative w-full h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 group">
                                                     <img src={newChar.imageUrl} className="w-full h-full object-contain" />
-                                                    <button 
-                                                        onClick={() => {
-                                                            setNewChar({...newChar, imageUrl: ''});
-                                                            if (fileInputRef.current) fileInputRef.current.value = '';
-                                                        }}
-                                                        className="absolute top-2 right-2 p-1 bg-black/50 hover:bg-red-500 rounded-full text-white transition-colors"
-                                                    >
+                                                    <button onClick={() => { setNewChar({...newChar, imageUrl: ''}); if (fileInputRef.current) fileInputRef.current.value = ''; }} className="absolute top-2 right-2 p-1 bg-black/50 hover:bg-red-500 rounded-full text-white transition-colors">
                                                         <X size={16} />
                                                     </button>
-                                                    {isProcessingImage && (
-                                                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                                                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
-                                                        </div>
-                                                    )}
+                                                    {isProcessingImage && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div></div>}
                                                 </div>
                                             )}
                                         </div>
-
                                         <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700">
                                             <p className="text-xs text-slate-400 mb-3 font-bold uppercase tracking-widest">特徴タグ</p>
                                             <div className="flex flex-wrap gap-2 mb-4">
@@ -410,26 +396,17 @@
                                             </div>
                                             <div className="grid grid-cols-2 gap-2">
                                                 {suggestedTags.map(t => (
-                                                    <button 
-                                                        key={t}
-                                                        onClick={() => !newChar.tags.includes(t) && setNewChar({...newChar, tags: [...newChar.tags, t]})}
-                                                        className={`text-[11px] py-2 rounded-xl border transition-all ${newChar.tags.includes(t) ? 'bg-blue-600/20 border-blue-500 text-blue-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}`}
-                                                    >
+                                                    <button key={t} onClick={() => !newChar.tags.includes(t) && setNewChar({...newChar, tags: [...newChar.tags, t]})} className={`text-[11px] py-2 rounded-xl border transition-all ${newChar.tags.includes(t) ? 'bg-blue-600/20 border-blue-500 text-blue-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
                                                         {t}
                                                     </button>
                                                 ))}
                                             </div>
                                         </div>
-                                        <button 
-                                            onClick={saveCharacter}
-                                            disabled={!newChar.name || isProcessingImage}
-                                            className="w-full bg-blue-600 py-4 rounded-2xl font-black text-lg shadow-lg shadow-blue-900/40 hover:bg-blue-500 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-                                        >
-                                            {isProcessingImage ? '処理中...' : '保存'}
+                                        <button onClick={saveCharacter} disabled={!newChar.name || isProcessingImage || !user} className="w-full bg-blue-600 py-4 rounded-2xl font-black text-lg shadow-lg shadow-blue-900/40 hover:bg-blue-500 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                                            {isProcessingImage ? '処理中...' : (!user ? '接続エラー' : '保存')}
                                         </button>
                                     </div>
                                 </div>
-
                                 <div className="space-y-3">
                                     <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">登録済み ({characters.length})</h3>
                                     <div className="grid grid-cols-1 gap-3">
@@ -438,21 +415,15 @@
                                                 <img src={c.imageUrl || "https://via.placeholder.com/150"} className="w-14 h-14 rounded-xl object-cover" />
                                                 <div className="flex-1 min-w-0">
                                                     <p className="font-bold text-sm truncate">{c.name}</p>
-                                                    <div className="flex gap-1 overflow-x-auto no-scrollbar mt-1">
-                                                        {c.tags?.map(t => <span key={t} className="text-[9px] text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded">#{t}</span>)}
-                                                    </div>
+                                                    <div className="flex gap-1 overflow-x-auto no-scrollbar mt-1">{c.tags?.map(t => <span key={t} className="text-[9px] text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded">#{t}</span>)}</div>
                                                 </div>
-                                                <button onClick={() => deleteCharacter(c.id)} className="p-2 text-slate-600 hover:text-red-400">
-                                                    <Trash2 size={18} />
-                                                </button>
+                                                <button onClick={() => deleteCharacter(c.id)} className="p-2 text-slate-600 hover:text-red-400"><Trash2 size={18} /></button>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                             </div>
                         )}
-
-                        {/* SWIPE MODE */}
                         {mode === 'swipe' && (
                             swipeIndex < characters.length ? (
                                 <div className="w-full max-w-sm h-[70vh] flex flex-col items-center justify-center relative">
@@ -460,34 +431,12 @@
                                         {characters.slice(swipeIndex, swipeIndex + 2).reverse().map((char, i) => {
                                             const isTop = i === (characters.slice(swipeIndex, swipeIndex + 2).length - 1);
                                             return (
-                                                <div 
-                                                    key={char.id}
-                                                    className="absolute inset-0 bg-slate-800 rounded-[2.5rem] shadow-2xl border border-slate-700 overflow-hidden touch-none select-none transition-transform duration-200 ease-out"
-                                                    style={{
-                                                        transform: isTop 
-                                                            ? `translateX(${offsetX}px) rotate(${offsetX * 0.05}deg) scale(1)` 
-                                                            : `scale(0.92) translateY(20px)`,
-                                                        zIndex: isTop ? 20 : 10,
-                                                        opacity: isTop ? 1 : 0.4
-                                                    }}
-                                                    onMouseDown={isTop ? onStart : undefined}
-                                                    onMouseMove={isTop ? onMove : undefined}
-                                                    onMouseUp={isTop ? onEnd : undefined}
-                                                    onMouseLeave={isTop ? onEnd : undefined}
-                                                    onTouchStart={isTop ? onStart : undefined}
-                                                    onTouchMove={isTop ? onMove : undefined}
-                                                    onTouchEnd={isTop ? onEnd : undefined}
-                                                >
+                                                <div key={char.id} className="absolute inset-0 bg-slate-800 rounded-[2.5rem] shadow-2xl border border-slate-700 overflow-hidden touch-none select-none transition-transform duration-200 ease-out" style={{transform: isTop ? `translateX(${offsetX}px) rotate(${offsetX * 0.05}deg) scale(1)` : `scale(0.92) translateY(20px)`, zIndex: isTop ? 20 : 10, opacity: isTop ? 1 : 0.4}} onMouseDown={isTop ? onStart : undefined} onMouseMove={isTop ? onMove : undefined} onMouseUp={isTop ? onEnd : undefined} onMouseLeave={isTop ? onEnd : undefined} onTouchStart={isTop ? onStart : undefined} onTouchMove={isTop ? onMove : undefined} onTouchEnd={isTop ? onEnd : undefined}>
                                                     <img src={char.imageUrl || "https://via.placeholder.com/400x600"} className="w-full h-3/4 object-cover pointer-events-none" />
                                                     <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-slate-900 via-slate-900/80 to-transparent">
                                                         <h2 className="text-3xl font-black mb-2">{char.name}</h2>
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {char.tags?.map(t => (
-                                                                <span key={t} className="text-[10px] bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-white/80 border border-white/5 font-bold uppercase tracking-wider">#{t}</span>
-                                                            ))}
-                                                        </div>
+                                                        <div className="flex flex-wrap gap-2">{char.tags?.map(t => (<span key={t} className="text-[10px] bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-white/80 border border-white/5 font-bold uppercase tracking-wider">#{t}</span>))}</div>
                                                     </div>
-
                                                     {isTop && offsetX > 50 && <div className="absolute top-12 left-8 border-4 border-green-500 text-green-500 font-black text-5xl p-2 rounded-2xl rotate-[-20deg]" style={{opacity: Math.min(offsetX/150, 1)}}>LIKE</div>}
                                                     {isTop && offsetX < -50 && <div className="absolute top-12 right-8 border-4 border-red-500 text-red-500 font-black text-5xl p-2 rounded-2xl rotate-[20deg]" style={{opacity: Math.min(-offsetX/150, 1)}}>苦手</div>}
                                                 </div>
@@ -501,45 +450,28 @@
                                 </div>
                             ) : (
                                 <div className="text-center space-y-4">
-                                    <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                                        <CheckCircle2 size={48} />
-                                    </div>
+                                    <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle2 size={48} /></div>
                                     <h2 className="text-2xl font-black">完了！</h2>
                                     <button onClick={() => setMode('analysis')} className="px-8 py-4 bg-blue-600 rounded-2xl font-bold shadow-lg">分析を見る</button>
                                 </div>
                             )
                         )}
-
-                        {/* ANALYSIS MODE */}
                         {mode === 'analysis' && (
                             <div className="w-full max-w-md space-y-6 pb-24">
                                 <div className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 shadow-2xl">
                                     <div className="flex justify-between items-start mb-8">
-                                        <div>
-                                            <h2 className="text-2xl font-black flex items-center gap-2">
-                                                <AlertCircle className="text-red-400" /> 分析結果
-                                            </h2>
-                                            <p className="text-slate-400 text-sm mt-1">{results.length} 件のデータ</p>
-                                        </div>
+                                        <div><h2 className="text-2xl font-black flex items-center gap-2"><AlertCircle className="text-red-400" /> 分析結果</h2><p className="text-slate-400 text-sm mt-1">{results.length} 件のデータ</p></div>
                                         <button onClick={() => setMode('swipe')} className="p-2 text-slate-500 hover:text-white"><RotateCcw size={20} /></button>
                                     </div>
-                                    
-                                    {analysis.length === 0 ? (
-                                        <div className="text-center py-10 text-slate-500">データなし</div>
-                                    ) : (
+                                    {analysis.length === 0 ? (<div className="text-center py-10 text-slate-500">データなし</div>) : (
                                         <div className="space-y-6">
                                             {analysis.map(([tag, count]) => {
                                                 const dislikeTotal = results.filter(r => r.rating === 'dislike').length;
                                                 const percent = dislikeTotal > 0 ? Math.round((count / dislikeTotal) * 100) : 0;
                                                 return (
                                                     <div key={tag} className="group">
-                                                        <div className="flex justify-between text-sm mb-2">
-                                                            <span className="font-black tracking-tight text-slate-200">{tag}</span>
-                                                            <span className="text-slate-500 font-mono">{percent}%</span>
-                                                        </div>
-                                                        <div className="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-slate-700">
-                                                            <div className="bg-gradient-to-r from-red-600 to-orange-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${percent}%` }}></div>
-                                                        </div>
+                                                        <div className="flex justify-between text-sm mb-2"><span className="font-black tracking-tight text-slate-200">{tag}</span><span className="text-slate-500 font-mono">{percent}%</span></div>
+                                                        <div className="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-slate-700"><div className="bg-gradient-to-r from-red-600 to-orange-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${percent}%` }}></div></div>
                                                     </div>
                                                 );
                                             })}
@@ -552,7 +484,6 @@
                 </div>
             );
         };
-
         const root = createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
