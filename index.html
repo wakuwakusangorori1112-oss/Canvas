@@ -38,13 +38,14 @@
             doc, 
             addDoc, 
             onSnapshot, 
-            deleteDoc 
+            deleteDoc,
+            writeBatch
         } from 'firebase/firestore';
         import { 
             Plus, Trash2, Tag, BarChart3, Play, Settings, RotateCcw, 
             Frown, Smile, Meh, AlertCircle, CheckCircle2, X, Search, User, Share2,
             Image as ImageIcon, Upload, Wifi, WifiOff, Database, ExternalLink, Lock,
-            MessageCircle
+            MessageCircle, FileText, Copy
         } from 'lucide-react';
 
         // --- Firebase Configuration ---
@@ -278,6 +279,47 @@
                 }
             };
 
+            // 結果削除機能
+            const deleteResult = async (id) => {
+                if (!confirm("この判定結果を削除しますか？\n（やり直したい場合はスワイプモードから再判定できます）")) return;
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'results', id));
+                } catch (err) {
+                    console.error("Delete result error:", err);
+                    alert("削除に失敗しました");
+                }
+            };
+
+            // 全結果リセット機能
+            const resetMyResults = async () => {
+                if (!confirm("あなたの分析結果を全て削除してリセットします。\nよろしいですか？")) return;
+                if (!user) return;
+                
+                // バッチ処理で削除（ただし一度に500件まで）
+                const batch = writeBatch(db);
+                const myRes = results.filter(r => r.userId === user.uid);
+                
+                if (myRes.length === 0) {
+                    alert("削除するデータがありません");
+                    return;
+                }
+
+                myRes.forEach(r => {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'results', r.id);
+                    batch.delete(ref);
+                });
+
+                try {
+                    await batch.commit();
+                    alert("リセットしました！");
+                    setMode('swipe');
+                    setSwipeIndex(0);
+                } catch (err) {
+                    console.error("Reset error:", err);
+                    alert("リセットに失敗しました");
+                }
+            };
+
             const handleDecision = async (rating) => {
                 if (swipeIndex >= characters.length) return;
                 const char = characters[swipeIndex];
@@ -289,7 +331,7 @@
                         await addDoc(resultCol, {
                             characterId: char.id,
                             characterName: char.name,
-                            imageUrl: char.imageUrl, // ギャラリー表示用に画像も保存
+                            imageUrl: char.imageUrl,
                             tags: char.tags,
                             rating: rating,
                             userId: user.uid,
@@ -326,6 +368,28 @@
                     "爬虫類的": "冷たさや感情の欠落を連想させる特徴に対し、生理的な拒絶反応が出やすいタイプです。"
                 };
                 return comments[topTag] || "特定の視覚的特徴に対して、強い自己防衛本能が働いています。この特徴を持つ対象を避けることで、心理的な安定を保とうとしているようです。";
+            };
+
+            // AI分析用レポート生成
+            const generateAIReport = () => {
+                if (!analysis || analysis.length === 0) return;
+                
+                let report = "【キャラクター苦手傾向分析データ】\n";
+                report += "以下のデータを元に、この人の深層心理や、なぜこういった特徴を不気味に感じるのか、心理学的・美学的な観点から分析してください。\n\n";
+                report += "■苦手な要素トップランキング\n";
+                analysis.forEach(([tag, count], index) => {
+                    report += `${index + 1}. ${tag}: ${count}回\n`;
+                });
+                
+                report += "\n■特に苦手と判定したキャラクターの特徴\n";
+                const dislikeChars = myResults.filter(r => r.rating === 'dislike').slice(0, 10);
+                dislikeChars.forEach(c => {
+                    report += `- ${c.characterName} (タグ: ${c.tags ? c.tags.join(', ') : 'なし'})\n`;
+                });
+
+                navigator.clipboard.writeText(report).then(() => {
+                    alert("AI分析用プロンプトをコピーしました！\nChatGPTやGeminiに貼り付けて聞いてみてください。");
+                });
             };
 
             const onStart = (e) => { setIsDragging(true); startX.current = e.type.includes('touch') ? e.touches[0].clientX : e.clientX; };
@@ -495,7 +559,17 @@
                                 <div className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 shadow-2xl">
                                     <div className="flex justify-between items-start mb-8">
                                         <div><h2 className="text-2xl font-black flex items-center gap-2"><AlertCircle className="text-red-400" /> 分析結果</h2><p className="text-slate-400 text-sm mt-1">{myResults.length} 件のデータ</p></div>
-                                        <button onClick={() => setMode('swipe')} className="p-2 text-slate-500 hover:text-white"><RotateCcw size={20} /></button>
+                                        <div className="flex gap-2">
+                                            {/* AIレポート出力ボタン */}
+                                            <button onClick={generateAIReport} className="p-2 bg-blue-600/20 text-blue-400 rounded-lg hover:bg-blue-600/40 transition-colors" title="AI分析用レポートをコピー">
+                                                <FileText size={20} />
+                                            </button>
+                                            {/* リセットボタン */}
+                                            <button onClick={resetMyResults} className="p-2 bg-red-600/20 text-red-400 rounded-lg hover:bg-red-600/40 transition-colors" title="結果を全削除してリセット">
+                                                <Trash2 size={20} />
+                                            </button>
+                                            <button onClick={() => setMode('swipe')} className="p-2 text-slate-500 hover:text-white"><RotateCcw size={20} /></button>
+                                        </div>
                                     </div>
                                     
                                     {/* 分析コメント表示エリア */}
@@ -559,6 +633,15 @@
                                                             ) : (
                                                                 <div className="w-full h-full flex items-center justify-center text-slate-700"><ImageIcon size={20} /></div>
                                                             )}
+                                                            <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button 
+                                                                    onClick={() => deleteResult(r.id)} 
+                                                                    className="bg-red-500 text-white rounded-full p-1 shadow-lg hover:bg-red-600"
+                                                                    title="判定を取り消す"
+                                                                >
+                                                                    <X size={12} />
+                                                                </button>
+                                                            </div>
                                                             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                                                                 <p className="text-[9px] text-white truncate">{r.characterName}</p>
                                                             </div>
