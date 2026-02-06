@@ -37,6 +37,7 @@
             collection, 
             doc, 
             addDoc, 
+            updateDoc, 
             onSnapshot, 
             deleteDoc,
             writeBatch
@@ -45,7 +46,7 @@
             Plus, Trash2, Tag, BarChart3, Play, Settings, RotateCcw, 
             Frown, Smile, Meh, AlertCircle, CheckCircle2, X, Search, User, Share2,
             Image as ImageIcon, Upload, Wifi, WifiOff, Database, ExternalLink, Lock,
-            FileText, Copy, Sparkles
+            FileText, Copy, Sparkles, Skull, ThumbsUp, Home, Edit2
         } from 'lucide-react';
 
         // --- Firebase Configuration ---
@@ -118,7 +119,7 @@
         const SimplePieChart = ({ data }) => {
             const total = data.reduce((acc, [_, count]) => acc + count, 0);
             let currentAngle = 0;
-            const colors = ['#EF4444', '#F97316', '#F59E0B', '#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#64748B'];
+            const colors = ['#EF4444', '#DC2626', '#F97316', '#F59E0B', '#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#64748B'];
 
             if (total === 0) return null;
 
@@ -155,7 +156,7 @@
                                     <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: colors[i % colors.length] }}></div>
                                     <span className="text-slate-200 font-bold">{tag}</span>
                                 </div>
-                                <span className="text-slate-400">{Math.round(count/total*100)}%</span>
+                                <span className="text-slate-400 font-mono">Score: {count}</span>
                             </div>
                         ))}
                     </div>
@@ -167,18 +168,21 @@
             const [user, setUser] = useState(null);
             const [characters, setCharacters] = useState([]);
             const [results, setResults] = useState([]);
-            const [mode, setMode] = useState('setup');
+            const [mode, setMode] = useState('home'); 
             const [swipeIndex, setSwipeIndex] = useState(0);
             const [loading, setLoading] = useState(true);
             const [isProcessingImage, setIsProcessingImage] = useState(false);
             const [authError, setAuthError] = useState(null);
             const [criticalError, setCriticalError] = useState(null);
-            const [galleryTab, setGalleryTab] = useState('dislike'); // 'dislike' or 'like'
+            const [galleryTab, setGalleryTab] = useState('dislike');
+            const [editingResult, setEditingResult] = useState(null); // 編集中の結果
 
             // スワイプ用
             const [offsetX, setOffsetX] = useState(0);
+            const [offsetY, setOffsetY] = useState(0);
             const [isDragging, setIsDragging] = useState(false);
             const startX = useRef(0);
+            const startY = useRef(0);
 
             // フォーム用
             const [newChar, setNewChar] = useState({ name: '', source: '', imageUrl: '', tags: [] });
@@ -328,13 +332,25 @@
                 }
             };
 
-            const deleteResult = async (id) => {
-                if (!confirm("この判定結果を削除しますか？\n（やり直したい場合はスワイプモードから再判定できます）")) return;
+            const deleteResult = async (id, e) => {
+                e.stopPropagation(); // 編集モーダルが開かないようにする
+                if (!confirm("この判定結果を削除しますか？")) return;
                 try {
                     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'results', id));
                 } catch (err) {
                     console.error("Delete result error:", err);
                     alert("削除に失敗しました");
+                }
+            };
+
+            const updateResult = async (id, newRating) => {
+                try {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'results', id);
+                    await updateDoc(ref, { rating: newRating });
+                    setEditingResult(null); 
+                } catch (err) {
+                    console.error("Update error:", err);
+                    alert("更新に失敗しました");
                 }
             };
 
@@ -369,7 +385,10 @@
             const handleDecision = async (rating) => {
                 if (swipeIndex >= characters.length) return;
                 const char = characters[swipeIndex];
-                setOffsetX(rating === 'like' ? 500 : -500);
+                
+                if (rating === 'not_dislike') setOffsetX(500); 
+                else if (rating === 'dislike') setOffsetX(-500); 
+                else if (rating === 'super_dislike') setOffsetY(-500); 
                 
                 if (user) {
                     try {
@@ -391,6 +410,7 @@
 
                 setTimeout(() => {
                     setOffsetX(0);
+                    setOffsetY(0);
                     if (swipeIndex < characters.length - 1) {
                         setSwipeIndex(prev => prev + 1);
                     } else {
@@ -399,29 +419,35 @@
                 }, 200);
             };
 
-            const copyToClipboard = (text) => {
-                if (navigator.clipboard && window.isSecureContext) {
-                    return navigator.clipboard.writeText(text);
-                } else {
-                    return new Promise((resolve, reject) => {
-                        const textArea = document.createElement("textarea");
-                        textArea.value = text;
-                        textArea.style.position = "fixed";
-                        textArea.style.left = "-9999px";
-                        document.body.appendChild(textArea);
-                        textArea.focus();
-                        textArea.select();
-                        try {
-                            const successful = document.execCommand('copy');
-                            if (successful) resolve();
-                            else reject(new Error("Copy command failed"));
-                        } catch (err) {
-                            reject(err);
-                        } finally {
-                            document.body.removeChild(textArea);
-                        }
-                    });
+            const copyToClipboard = async (text) => {
+                try {
+                    if (navigator.clipboard && window.isSecureContext) {
+                        await navigator.clipboard.writeText(text);
+                        return; 
+                    }
+                } catch (err) {
+                    console.warn("Clipboard API failed, switching to fallback...", err);
                 }
+
+                return new Promise((resolve, reject) => {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = text;
+                    textArea.style.position = "fixed";
+                    textArea.style.left = "-9999px";
+                    textArea.style.top = "0";
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    try {
+                        const successful = document.execCommand('copy');
+                        if (successful) resolve();
+                        else reject(new Error("Copy command failed"));
+                    } catch (err) {
+                        reject(err);
+                    } finally {
+                        document.body.removeChild(textArea);
+                    }
+                });
             };
 
             const generateAIReport = () => {
@@ -432,16 +458,36 @@
                 
                 let report = "【キャラクター苦手傾向分析データ】\n";
                 report += "以下のデータを元に、この人の深層心理や、なぜこういった特徴を不気味に感じるのか、心理学的・美学的な観点から分析してください。\n\n";
-                report += "■苦手な要素トップランキング\n";
-                analysis.forEach(([tag, count], index) => {
-                    report += `${index + 1}. ${tag}: ${count}回\n`;
+                
+                report += "■苦手スコア（不快度が高い要素）\n";
+                report += "※スコアは「本当に嫌い」=3点、「嫌い」=1点で算出しています。\n";
+                analysis.forEach(([tag, score], index) => {
+                    report += `${index + 1}. ${tag}: ${score}点\n`;
                 });
                 
-                report += "\n■特に苦手と判定したキャラクターの特徴\n";
-                const dislikeChars = myResults.filter(r => r.rating === 'dislike').slice(0, 10);
-                dislikeChars.forEach(c => {
-                    report += `- ${c.characterName} ${c.characterSource ? '(' + c.characterSource + ')' : ''} (タグ: ${c.tags ? c.tags.join(', ') : 'なし'})\n`;
-                });
+                const superDislikeChars = myResults.filter(r => r.rating === 'super_dislike');
+                if (superDislikeChars.length > 0) {
+                    report += "\n■【要注意】「本当に嫌い」と判定したキャラクター（強い拒絶反応）\n";
+                    superDislikeChars.forEach(c => {
+                        report += `- ${c.characterName} ${c.characterSource ? '(' + c.characterSource + ')' : ''} [タグ: ${c.tags ? c.tags.join(', ') : 'なし'}]\n`;
+                    });
+                }
+
+                const dislikeChars = myResults.filter(r => r.rating === 'dislike');
+                if (dislikeChars.length > 0) {
+                    report += "\n■「嫌い」と判定したキャラクター\n";
+                    dislikeChars.slice(0, 15).forEach(c => {
+                        report += `- ${c.characterName} ${c.characterSource ? '(' + c.characterSource + ')' : ''}\n`;
+                    });
+                }
+
+                const notDislikeChars = myResults.filter(r => r.rating === 'not_dislike' || r.rating === 'like');
+                if (notDislikeChars.length > 0) {
+                    report += "\n■（参考）「嫌いじゃない」と判定したキャラクター（比較用）\n";
+                    notDislikeChars.slice(0, 10).forEach(c => {
+                        report += `- ${c.characterName}\n`;
+                    });
+                }
 
                 copyToClipboard(report)
                     .then(() => alert("AI分析用プロンプトをコピーしました！\nChatGPTやGeminiに貼り付けて聞いてみてください。"))
@@ -451,9 +497,32 @@
                     });
             };
 
-            const onStart = (e) => { setIsDragging(true); startX.current = e.type.includes('touch') ? e.touches[0].clientX : e.clientX; };
-            const onMove = (e) => { if (!isDragging) return; const currentX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX; setOffsetX(currentX - startX.current); };
-            const onEnd = () => { if (!isDragging) return; setIsDragging(false); if (offsetX > 100) handleDecision('like'); else if (offsetX < -100) handleDecision('dislike'); else setOffsetX(0); };
+            const onStart = (e) => { 
+                setIsDragging(true); 
+                startX.current = e.type.includes('touch') ? e.touches[0].clientX : e.clientX; 
+                startY.current = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+            };
+            const onMove = (e) => { 
+                if (!isDragging) return; 
+                const currentX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX; 
+                const currentY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+                setOffsetX(currentX - startX.current);
+                setOffsetY(currentY - startY.current);
+            };
+            const onEnd = () => { 
+                if (!isDragging) return; 
+                setIsDragging(false);
+                if (offsetY < -100 && Math.abs(offsetY) > Math.abs(offsetX)) {
+                    handleDecision('super_dislike'); 
+                } else if (offsetX > 100) {
+                    handleDecision('not_dislike'); 
+                } else if (offsetX < -100) {
+                    handleDecision('dislike'); 
+                } else {
+                    setOffsetX(0);
+                    setOffsetY(0);
+                }
+            };
 
             const myResults = useMemo(() => {
                 if (!user) return [];
@@ -461,10 +530,18 @@
             }, [results, user]);
 
             const analysis = useMemo(() => {
-                const dislikeResults = myResults.filter(r => r.rating === 'dislike');
-                const tagCounts = {};
-                dislikeResults.forEach(r => { r.tags?.forEach(tag => { tagCounts[tag] = (tagCounts[tag] || 0) + 1; }); });
-                return Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+                const tagScores = {};
+                myResults.forEach(r => {
+                    let weight = 0;
+                    if (r.rating === 'super_dislike') weight = 3;
+                    else if (r.rating === 'dislike') weight = 1;
+                    else return; 
+
+                    r.tags?.forEach(tag => { 
+                        tagScores[tag] = (tagScores[tag] || 0) + weight; 
+                    }); 
+                });
+                return Object.entries(tagScores).sort((a, b) => b[1] - a[1]).slice(0, 10);
             }, [myResults]);
 
             if (criticalError) return <CriticalErrorGuide type={criticalError} />;
@@ -473,10 +550,12 @@
             return (
                 <div className="min-h-screen bg-slate-900 text-white font-sans overflow-hidden flex flex-col">
                     <header className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/80 backdrop-blur-md z-30">
-                        <h1 className="text-xl font-black tracking-tighter flex items-center gap-2">
-                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center italic">C</div>
-                            CHAR-LAB
-                        </h1>
+                        <button onClick={() => setMode('home')} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                            <h1 className="text-xl font-black tracking-tighter flex items-center gap-2">
+                                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center italic">C</div>
+                                CHAR-LAB
+                            </h1>
+                        </button>
                         <div className="flex items-center gap-2">
                             {user ? (
                                 <div className="text-xs text-green-400 flex items-center gap-1 bg-green-900/20 px-2 py-1 rounded-full border border-green-900">
@@ -489,7 +568,6 @@
                             )}
                             <div className="flex bg-slate-800 p-1 rounded-xl ml-2">
                                 <button onClick={() => setMode('setup')} className={`p-2 rounded-lg transition-all ${mode === 'setup' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><Settings size={20} /></button>
-                                <button onClick={() => { setSwipeIndex(0); setMode('swipe'); }} className={`p-2 rounded-lg transition-all ${mode === 'swipe' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><Play size={20} /></button>
                                 <button onClick={() => setMode('analysis')} className={`p-2 rounded-lg transition-all ${mode === 'analysis' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}><BarChart3 size={20} /></button>
                             </div>
                         </div>
@@ -504,6 +582,54 @@
                     )}
 
                     <main className="flex-1 relative flex flex-col items-center justify-center p-4 overflow-y-auto">
+                        
+                        {/* HOME MODE */}
+                        {mode === 'home' && (
+                            <div className="flex flex-col items-center justify-center text-center space-y-8 max-w-md w-full animate-in fade-in zoom-in duration-500">
+                                <div className="space-y-4">
+                                    <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl mx-auto flex items-center justify-center shadow-2xl shadow-blue-500/20">
+                                        <Search size={48} className="text-white" />
+                                    </div>
+                                    <h1 className="text-4xl font-black tracking-tighter">
+                                        CHARACTER<br/>ANALYZER
+                                    </h1>
+                                    <p className="text-slate-400 text-sm leading-relaxed px-4">
+                                        「なんとなく苦手」を言語化しよう。<br/>
+                                        直感的なスワイプ操作で、<br/>
+                                        あなたの深層心理を分析します。
+                                    </p>
+                                </div>
+
+                                <div className="w-full space-y-4 px-4">
+                                    <button 
+                                        onClick={() => { setSwipeIndex(0); setMode('swipe'); }}
+                                        className="w-full py-4 bg-white text-slate-900 rounded-2xl font-bold text-lg shadow-xl hover:bg-slate-100 transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <Play size={20} className="fill-slate-900" />
+                                        診断を始める
+                                    </button>
+                                    
+                                    <div className="pt-4 border-t border-slate-800">
+                                        <p className="text-xs text-slate-500 mb-3">管理者・登録用メニュー</p>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button 
+                                                onClick={() => setMode('setup')}
+                                                className="py-3 bg-slate-800 text-slate-300 rounded-xl font-bold text-sm hover:bg-slate-700 transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <Settings size={16} /> キャラ登録
+                                            </button>
+                                            <button 
+                                                onClick={() => setMode('analysis')}
+                                                className="py-3 bg-slate-800 text-slate-300 rounded-xl font-bold text-sm hover:bg-slate-700 transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <BarChart3 size={16} /> 分析を見る
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {mode === 'setup' && (
                             <div className="w-full max-w-md space-y-6 pb-24">
                                 <div className="bg-slate-800 p-6 rounded-3xl border border-slate-700 shadow-xl">
@@ -594,22 +720,37 @@
                                         {characters.slice(swipeIndex, swipeIndex + 2).reverse().map((char, i) => {
                                             const isTop = i === (characters.slice(swipeIndex, swipeIndex + 2).length - 1);
                                             return (
-                                                <div key={char.id} className="absolute inset-0 bg-slate-800 rounded-[2.5rem] shadow-2xl border border-slate-700 overflow-hidden touch-none select-none transition-transform duration-200 ease-out" style={{transform: isTop ? `translateX(${offsetX}px) rotate(${offsetX * 0.05}deg) scale(1)` : `scale(0.92) translateY(20px)`, zIndex: isTop ? 20 : 10, opacity: isTop ? 1 : 0.4}} onMouseDown={isTop ? onStart : undefined} onMouseMove={isTop ? onMove : undefined} onMouseUp={isTop ? onEnd : undefined} onMouseLeave={isTop ? onEnd : undefined} onTouchStart={isTop ? onStart : undefined} onTouchMove={isTop ? onMove : undefined} onTouchEnd={isTop ? onEnd : undefined}>
+                                                <div key={char.id} className="absolute inset-0 bg-slate-800 rounded-[2.5rem] shadow-2xl border border-slate-700 overflow-hidden touch-none select-none transition-transform duration-200 ease-out" style={{transform: isTop ? `translate(${offsetX}px, ${offsetY}px) rotate(${offsetX * 0.05}deg) scale(1)` : `scale(0.92) translateY(20px)`, zIndex: isTop ? 20 : 10, opacity: isTop ? 1 : 0.4}} onMouseDown={isTop ? onStart : undefined} onMouseMove={isTop ? onMove : undefined} onMouseUp={isTop ? onEnd : undefined} onMouseLeave={isTop ? onEnd : undefined} onTouchStart={isTop ? onStart : undefined} onTouchMove={isTop ? onMove : undefined} onTouchEnd={isTop ? onEnd : undefined}>
                                                     <img src={char.imageUrl || "https://via.placeholder.com/400x600"} className="w-full h-3/4 object-cover pointer-events-none" />
                                                     <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-slate-900 via-slate-900/80 to-transparent">
                                                         <h2 className="text-3xl font-black mb-1">{char.name}</h2>
                                                         {char.source && <p className="text-sm text-slate-300 mb-2">{char.source}</p>}
                                                         <div className="flex flex-wrap gap-2">{char.tags?.map(t => (<span key={t} className="text-[10px] bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-white/80 border border-white/5 font-bold uppercase tracking-wider">#{t}</span>))}</div>
                                                     </div>
-                                                    {isTop && offsetX > 50 && <div className="absolute top-12 left-8 border-4 border-green-500 text-green-500 font-black text-5xl p-2 rounded-2xl rotate-[-20deg]" style={{opacity: Math.min(offsetX/150, 1)}}>LIKE</div>}
-                                                    {isTop && offsetX < -50 && <div className="absolute top-12 right-8 border-4 border-red-500 text-red-500 font-black text-5xl p-2 rounded-2xl rotate-[20deg]" style={{opacity: Math.min(-offsetX/150, 1)}}>苦手</div>}
+                                                    
+                                                    {/* Overlay Indicators */}
+                                                    {isTop && offsetX > 50 && Math.abs(offsetX) > Math.abs(offsetY) && <div className="absolute top-12 left-8 border-4 border-green-500 text-green-500 font-black text-4xl p-2 rounded-2xl rotate-[-20deg]" style={{opacity: Math.min(offsetX/150, 1)}}>嫌いじゃない</div>}
+                                                    {isTop && offsetX < -50 && Math.abs(offsetX) > Math.abs(offsetY) && <div className="absolute top-12 right-8 border-4 border-orange-500 text-orange-500 font-black text-4xl p-2 rounded-2xl rotate-[20deg]" style={{opacity: Math.min(-offsetX/150, 1)}}>嫌い</div>}
+                                                    {isTop && offsetY < -50 && Math.abs(offsetY) > Math.abs(offsetX) && (
+                                                        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 border-4 border-red-600 text-red-600 font-black text-4xl p-2 rounded-2xl" style={{opacity: Math.min(-offsetY/150, 1)}}>本当に嫌い</div>
+                                                    )}
                                                 </div>
                                             );
                                         })}
                                     </div>
-                                    <div className="flex gap-8 mt-10">
-                                        <button onClick={() => handleDecision('dislike')} className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-red-500 shadow-2xl active:scale-90 transition-transform"><Frown size={40} /></button>
-                                        <button onClick={() => handleDecision('like')} className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-2xl active:scale-90 transition-transform"><Smile size={40} /></button>
+                                    <div className="flex justify-between w-full max-w-sm mt-8 gap-4 px-4">
+                                        <button onClick={() => handleDecision('dislike')} className="w-16 h-16 bg-white rounded-full flex items-center justify-center text-orange-500 shadow-xl border-4 border-slate-100 flex-col gap-1">
+                                            <Frown size={24} />
+                                            <span className="text-[9px] font-bold">嫌い</span>
+                                        </button>
+                                        <button onClick={() => handleDecision('super_dislike')} className="w-20 h-20 bg-red-600 rounded-full flex items-center justify-center text-white shadow-xl border-4 border-red-800 flex-col gap-1 -mt-4">
+                                            <Skull size={32} />
+                                            <span className="text-[10px] font-bold">本当に嫌い</span>
+                                        </button>
+                                        <button onClick={() => handleDecision('not_dislike')} className="w-16 h-16 bg-white rounded-full flex items-center justify-center text-green-500 shadow-xl border-4 border-slate-100 flex-col gap-1">
+                                            <ThumbsUp size={24} />
+                                            <span className="text-[9px] font-bold">Safe</span>
+                                        </button>
                                     </div>
                                 </div>
                             ) : (
@@ -626,7 +767,6 @@
                                     <div className="flex justify-between items-start mb-8">
                                         <div><h2 className="text-2xl font-black flex items-center gap-2"><AlertCircle className="text-red-400" /> 分析結果</h2><p className="text-slate-400 text-sm mt-1">{myResults.length} 件のデータ</p></div>
                                         <div className="flex gap-2">
-                                            {/* リセットボタン */}
                                             <button onClick={resetMyResults} className="p-2 bg-red-600/20 text-red-400 rounded-lg hover:bg-red-600/40 transition-colors" title="結果を全削除してリセット">
                                                 <Trash2 size={20} />
                                             </button>
@@ -634,10 +774,16 @@
                                         </div>
                                     </div>
                                     
-                                    {/* AIレポート出力ボタン (目立つように配置) */}
-                                    <button onClick={generateAIReport} className="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2 mb-8 hover:opacity-90 transition-all">
-                                        <Sparkles size={20} />
-                                        AIに深層心理を分析してもらう（プロンプトコピー）
+                                    {/* AIレポート出力ボタン */}
+                                    <button 
+                                        onClick={generateAIReport} 
+                                        className="w-full p-4 bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl font-bold text-white shadow-lg flex flex-col items-center justify-center gap-2 mb-8 hover:opacity-90 transition-all text-sm whitespace-normal h-auto leading-relaxed border border-white/10"
+                                    >
+                                        <div className="flex items-center gap-2 text-lg">
+                                            <Sparkles size={24} />
+                                            <span>AIプロンプトをコピー</span>
+                                        </div>
+                                        <span className="text-xs opacity-80 font-normal">ChatGPTやGeminiに貼り付けて<br/>深層心理を分析してもらいましょう</span>
                                     </button>
 
                                     {/* グラフ表示 */}
@@ -647,43 +793,47 @@
 
                                     {/* ギャラリー表示エリア */}
                                     <div>
-                                        <div className="flex bg-slate-900/50 p-1 rounded-xl mb-4">
+                                        <div className="flex bg-slate-900/50 p-1 rounded-xl mb-4 overflow-x-auto">
                                             <button 
-                                                onClick={() => setGalleryTab('dislike')}
-                                                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${galleryTab === 'dislike' ? 'bg-red-500/20 text-red-400 shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                                onClick={() => setGalleryTab('super_dislike')}
+                                                className={`flex-1 py-2 px-2 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${galleryTab === 'super_dislike' ? 'bg-red-600 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
                                             >
-                                                苦手 ({myResults.filter(r => r.rating === 'dislike').length})
+                                                本当に嫌い ({myResults.filter(r => r.rating === 'super_dislike').length})
                                             </button>
                                             <button 
-                                                onClick={() => setGalleryTab('like')}
-                                                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${galleryTab === 'like' ? 'bg-green-500/20 text-green-400 shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                                onClick={() => setGalleryTab('dislike')}
+                                                className={`flex-1 py-2 px-2 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${galleryTab === 'dislike' ? 'bg-orange-500/20 text-orange-400 shadow' : 'text-slate-500 hover:text-slate-300'}`}
                                             >
-                                                LIKE ({myResults.filter(r => r.rating === 'like').length})
+                                                嫌い ({myResults.filter(r => r.rating === 'dislike').length})
+                                            </button>
+                                            <button 
+                                                onClick={() => setGalleryTab('not_dislike')} 
+                                                className={`flex-1 py-2 px-2 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${galleryTab === 'not_dislike' ? 'bg-green-500/20 text-green-400 shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                            >
+                                                Safe ({myResults.filter(r => r.rating === 'not_dislike' || r.rating === 'like').length})
                                             </button>
                                         </div>
                                         
                                         <div className="grid grid-cols-3 gap-2">
                                             {myResults
-                                                .filter(r => r.rating === galleryTab)
+                                                .filter(r => {
+                                                    if (galleryTab === 'not_dislike') return r.rating === 'not_dislike' || r.rating === 'like';
+                                                    return r.rating === galleryTab;
+                                                })
                                                 .map((r, i) => {
-                                                    // 結果データに画像がない場合は、キャラリストから探すフォールバック
                                                     const imgUrl = r.imageUrl || characters.find(c => c.id === r.characterId)?.imageUrl;
-                                                    
                                                     return (
-                                                        <div key={i} className="aspect-[3/4] bg-slate-900 rounded-lg overflow-hidden relative border border-slate-700 group">
+                                                        <div key={i} className="aspect-[3/4] bg-slate-900 rounded-lg overflow-hidden relative border border-slate-700 group" onClick={() => setEditingResult(r)}>
                                                             {imgUrl ? (
                                                                 <img src={imgUrl} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" />
                                                             ) : (
                                                                 <div className="w-full h-full flex items-center justify-center text-slate-700"><ImageIcon size={20} /></div>
                                                             )}
                                                             <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <button 
-                                                                    onClick={() => deleteResult(r.id)} 
-                                                                    className="bg-red-500 text-white rounded-full p-1 shadow-lg hover:bg-red-600"
-                                                                    title="判定を取り消す"
-                                                                >
-                                                                    <X size={12} />
-                                                                </button>
+                                                                <button onClick={(e) => deleteResult(r.id, e)} className="bg-red-500 text-white rounded-full p-1 shadow-lg hover:bg-red-600" title="判定を取り消す"><X size={12} /></button>
+                                                            </div>
+                                                            <div className="absolute top-1 left-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button className="bg-blue-500 text-white rounded-full p-1 shadow-lg hover:bg-blue-600" title="判定を修正"><Edit2 size={12} /></button>
                                                             </div>
                                                             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                                                                 <p className="text-[9px] text-white truncate">{r.characterName}</p>
@@ -693,13 +843,47 @@
                                                     );
                                                 })
                                             }
-                                            {myResults.filter(r => r.rating === galleryTab).length === 0 && (
+                                            {myResults.filter(r => {
+                                                if (galleryTab === 'not_dislike') return r.rating === 'not_dislike' || r.rating === 'like';
+                                                return r.rating === galleryTab;
+                                            }).length === 0 && (
                                                 <div className="col-span-3 text-center py-10 text-slate-500 text-xs">
-                                                    まだ{galleryTab === 'dislike' ? '苦手' : 'LIKE'}したキャラがいません
+                                                    まだありません
                                                 </div>
                                             )}
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* 編集モーダル */}
+                        {editingResult && (
+                            <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setEditingResult(null)}>
+                                <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-sm border border-slate-700 shadow-2xl" onClick={e => e.stopPropagation()}>
+                                    <h3 className="text-xl font-bold mb-4 text-center">判定を修正</h3>
+                                    <div className="flex justify-center mb-4">
+                                        <div className="w-24 h-32 bg-slate-900 rounded-lg overflow-hidden">
+                                            {editingResult.imageUrl ? (
+                                                <img src={editingResult.imageUrl} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-slate-700"><ImageIcon /></div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <p className="text-center font-bold mb-6">{editingResult.characterName}</p>
+                                    <div className="flex flex-col gap-3">
+                                        <button onClick={() => updateResult(editingResult.id, 'super_dislike')} className={`p-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${editingResult.rating === 'super_dislike' ? 'bg-red-600 ring-2 ring-white shadow-lg scale-105' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}>
+                                            <Skull size={20} /> 本当に嫌い
+                                        </button>
+                                        <button onClick={() => updateResult(editingResult.id, 'dislike')} className={`p-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${editingResult.rating === 'dislike' ? 'bg-orange-500 ring-2 ring-white shadow-lg scale-105' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}>
+                                            <Frown size={20} /> 嫌い
+                                        </button>
+                                        <button onClick={() => updateResult(editingResult.id, 'not_dislike')} className={`p-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${editingResult.rating === 'not_dislike' || editingResult.rating === 'like' ? 'bg-green-500 ring-2 ring-white shadow-lg scale-105' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}>
+                                            <ThumbsUp size={20} /> Safe (嫌いじゃない)
+                                        </button>
+                                    </div>
+                                    <button onClick={() => setEditingResult(null)} className="mt-6 w-full py-3 text-slate-500 font-bold hover:text-white transition-colors">キャンセル</button>
                                 </div>
                             </div>
                         )}
