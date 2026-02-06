@@ -43,7 +43,8 @@
         import { 
             Plus, Trash2, Tag, BarChart3, Play, Settings, RotateCcw, 
             Frown, Smile, Meh, AlertCircle, CheckCircle2, X, Search, User, Share2,
-            Image as ImageIcon, Upload, Wifi, WifiOff, Database, ExternalLink, Lock
+            Image as ImageIcon, Upload, Wifi, WifiOff, Database, ExternalLink, Lock,
+            MessageCircle
         } from 'lucide-react';
 
         // --- Firebase Configuration ---
@@ -122,6 +123,7 @@
             const [isProcessingImage, setIsProcessingImage] = useState(false);
             const [authError, setAuthError] = useState(null);
             const [criticalError, setCriticalError] = useState(null);
+            const [galleryTab, setGalleryTab] = useState('dislike'); // 'dislike' or 'like'
 
             // スワイプ用
             const [offsetX, setOffsetX] = useState(0);
@@ -130,7 +132,15 @@
 
             // フォーム用
             const [newChar, setNewChar] = useState({ name: '', imageUrl: '', tags: [] });
-            const suggestedTags = ["不気味の谷", "目が笑っていない", "色が派手すぎ", "プロポーションが歪", "あざとい", "無機質", "人間味がありすぎ", "左右非対称"];
+            
+            // タグリストを拡張
+            const suggestedTags = [
+                "不気味の谷", "目が笑っていない", "色が派手すぎ", "プロポーションが歪", 
+                "あざとい", "無機質", "人間味がありすぎ", "左右非対称",
+                "集合体", "粘液質", "爬虫類的", "ピエロ", "日本人形", 
+                "目が大きすぎる", "動きが予測不能", "鋭利", "威圧的",
+                "清潔感がない", "作り物めいている", "表情が固定"
+            ];
             const fileInputRef = useRef(null);
 
             // 1. Authentication
@@ -164,7 +174,6 @@
                     if (err.message && err.message.includes("Cloud Firestore API has not been used")) {
                         setCriticalError("firestore_not_created");
                     } else if (err.code === 'permission-denied') {
-                        // 権限エラーの場合、専用のガイド画面を出すように変更
                         setCriticalError("permission_denied");
                     } else {
                         setAuthError(`読み込みエラー: ${err.message}`);
@@ -176,7 +185,7 @@
                     const charList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setCharacters(charList);
                     setAuthError(null);
-                    setCriticalError(null); // 成功したらエラー解除
+                    setCriticalError(null); 
                 }, handleError);
 
                 const resultCol = collection(db, 'artifacts', appId, 'public', 'data', 'results');
@@ -280,6 +289,7 @@
                         await addDoc(resultCol, {
                             characterId: char.id,
                             characterName: char.name,
+                            imageUrl: char.imageUrl, // ギャラリー表示用に画像も保存
                             tags: char.tags,
                             rating: rating,
                             userId: user.uid,
@@ -298,6 +308,24 @@
                         setMode('analysis');
                     }
                 }, 200);
+            };
+
+            // 分析コメント生成ロジック
+            const getAnalysisComment = (topTag) => {
+                const comments = {
+                    "不気味の谷": "人間と非人間の境界にある『中途半端なリアルさ』に対し、本能的な警戒心が強いタイプです。生存本能が正常に働いている証拠でもあります。",
+                    "目が笑っていない": "相手の感情や本心が読み取れない状況に対し、強いストレスを感じる感受性をお持ちです。誠実さを重視する傾向があります。",
+                    "色が派手すぎ": "視覚的な刺激に対して敏感で、調和や落ち着きを好む傾向があります。繊細な美的感覚の持ち主かもしれません。",
+                    "プロポーションが歪": "身体的な違和感や生理的なバランスの崩れに対して、鋭い察知能力を持っています。整った秩序を愛するタイプです。",
+                    "あざとい": "作られた感情表現や計算高さを見抜く力が強く、嘘偽りのないコミュニケーションを求めています。",
+                    "無機質": "温かみや生命感の欠如に対して、寂しさや恐怖を感じ取りやすい、共感性の高い感受性があります。",
+                    "集合体": "微細なパターンの繰り返しに対して、生理的な嫌悪感を抱きやすい防衛本能があります。",
+                    "ピエロ": "『隠された素顔』や『表情と行動の乖離』に対して強い恐怖心を持つ傾向があります。予測不能な事態を避けたがります。",
+                    "日本人形": "魂が宿っているような静けさに対して、見透かされているような不安を感じる感受性があります。",
+                    "目が大きすぎる": "現実離れした誇張表現に対し、違和感を感じやすいリアリストな一面があるかもしれません。",
+                    "爬虫類的": "冷たさや感情の欠落を連想させる特徴に対し、生理的な拒絶反応が出やすいタイプです。"
+                };
+                return comments[topTag] || "特定の視覚的特徴に対して、強い自己防衛本能が働いています。この特徴を持つ対象を避けることで、心理的な安定を保とうとしているようです。";
             };
 
             const onStart = (e) => { setIsDragging(true); startX.current = e.type.includes('touch') ? e.touches[0].clientX : e.clientX; };
@@ -463,8 +491,24 @@
                                         <div><h2 className="text-2xl font-black flex items-center gap-2"><AlertCircle className="text-red-400" /> 分析結果</h2><p className="text-slate-400 text-sm mt-1">{results.length} 件のデータ</p></div>
                                         <button onClick={() => setMode('swipe')} className="p-2 text-slate-500 hover:text-white"><RotateCcw size={20} /></button>
                                     </div>
+                                    
+                                    {/* 分析コメント表示エリア */}
+                                    {analysis.length > 0 && (
+                                        <div className="bg-slate-900/50 p-5 rounded-2xl mb-8 border border-slate-700 relative overflow-hidden">
+                                            <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/10 rounded-full -mr-10 -mt-10 blur-xl"></div>
+                                            <h3 className="font-bold text-blue-400 flex items-center gap-2 mb-3 text-sm">
+                                                <MessageCircle size={16} /> 分析レポート
+                                            </h3>
+                                            <p className="text-sm leading-relaxed text-slate-300">
+                                                <span className="font-bold text-white block mb-2">最も多い反応：「{analysis[0][0]}」</span>
+                                                {getAnalysisComment(analysis[0][0])}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* グラフ表示 */}
                                     {analysis.length === 0 ? (<div className="text-center py-10 text-slate-500">データなし</div>) : (
-                                        <div className="space-y-6">
+                                        <div className="space-y-6 mb-10">
                                             {analysis.map(([tag, count]) => {
                                                 const dislikeTotal = results.filter(r => r.rating === 'dislike').length;
                                                 const percent = dislikeTotal > 0 ? Math.round((count / dislikeTotal) * 100) : 0;
@@ -477,6 +521,52 @@
                                             })}
                                         </div>
                                     )}
+
+                                    {/* ギャラリー表示エリア */}
+                                    <div>
+                                        <div className="flex bg-slate-900/50 p-1 rounded-xl mb-4">
+                                            <button 
+                                                onClick={() => setGalleryTab('dislike')}
+                                                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${galleryTab === 'dislike' ? 'bg-red-500/20 text-red-400 shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                            >
+                                                苦手 ({results.filter(r => r.rating === 'dislike').length})
+                                            </button>
+                                            <button 
+                                                onClick={() => setGalleryTab('like')}
+                                                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${galleryTab === 'like' ? 'bg-green-500/20 text-green-400 shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                            >
+                                                LIKE ({results.filter(r => r.rating === 'like').length})
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {results
+                                                .filter(r => r.rating === galleryTab)
+                                                .map((r, i) => {
+                                                    // 結果データに画像がない場合は、キャラリストから探すフォールバック
+                                                    const imgUrl = r.imageUrl || characters.find(c => c.id === r.characterId)?.imageUrl;
+                                                    
+                                                    return (
+                                                        <div key={i} className="aspect-[3/4] bg-slate-900 rounded-lg overflow-hidden relative border border-slate-700 group">
+                                                            {imgUrl ? (
+                                                                <img src={imgUrl} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-slate-700"><ImageIcon size={20} /></div>
+                                                            )}
+                                                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                                                                <p className="text-[9px] text-white truncate">{r.characterName}</p>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            }
+                                            {results.filter(r => r.rating === galleryTab).length === 0 && (
+                                                <div className="col-span-3 text-center py-10 text-slate-500 text-xs">
+                                                    まだ{galleryTab === 'dislike' ? '苦手' : 'LIKE'}したキャラがいません
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
