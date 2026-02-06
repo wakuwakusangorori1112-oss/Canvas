@@ -332,12 +332,18 @@
             const onMove = (e) => { if (!isDragging) return; const currentX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX; setOffsetX(currentX - startX.current); };
             const onEnd = () => { if (!isDragging) return; setIsDragging(false); if (offsetX > 100) handleDecision('like'); else if (offsetX < -100) handleDecision('dislike'); else setOffsetX(0); };
 
+            // ユーザー個人の結果のみを抽出
+            const myResults = useMemo(() => {
+                if (!user) return [];
+                return results.filter(r => r.userId === user.uid);
+            }, [results, user]);
+
             const analysis = useMemo(() => {
-                const dislikeResults = results.filter(r => r.rating === 'dislike');
+                const dislikeResults = myResults.filter(r => r.rating === 'dislike');
                 const tagCounts = {};
                 dislikeResults.forEach(r => { r.tags?.forEach(tag => { tagCounts[tag] = (tagCounts[tag] || 0) + 1; }); });
                 return Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
-            }, [results]);
+            }, [myResults]);
 
             if (criticalError) return <CriticalErrorGuide type={criticalError} />;
             if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">読み込み中...</div>;
@@ -488,7 +494,7 @@
                             <div className="w-full max-w-md space-y-6 pb-24">
                                 <div className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 shadow-2xl">
                                     <div className="flex justify-between items-start mb-8">
-                                        <div><h2 className="text-2xl font-black flex items-center gap-2"><AlertCircle className="text-red-400" /> 分析結果</h2><p className="text-slate-400 text-sm mt-1">{results.length} 件のデータ</p></div>
+                                        <div><h2 className="text-2xl font-black flex items-center gap-2"><AlertCircle className="text-red-400" /> 分析結果</h2><p className="text-slate-400 text-sm mt-1">{myResults.length} 件のデータ</p></div>
                                         <button onClick={() => setMode('swipe')} className="p-2 text-slate-500 hover:text-white"><RotateCcw size={20} /></button>
                                     </div>
                                     
@@ -510,7 +516,7 @@
                                     {analysis.length === 0 ? (<div className="text-center py-10 text-slate-500">データなし</div>) : (
                                         <div className="space-y-6 mb-10">
                                             {analysis.map(([tag, count]) => {
-                                                const dislikeTotal = results.filter(r => r.rating === 'dislike').length;
+                                                const dislikeTotal = myResults.filter(r => r.rating === 'dislike').length;
                                                 const percent = dislikeTotal > 0 ? Math.round((count / dislikeTotal) * 100) : 0;
                                                 return (
                                                     <div key={tag} className="group">
@@ -529,18 +535,18 @@
                                                 onClick={() => setGalleryTab('dislike')}
                                                 className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${galleryTab === 'dislike' ? 'bg-red-500/20 text-red-400 shadow' : 'text-slate-500 hover:text-slate-300'}`}
                                             >
-                                                苦手 ({results.filter(r => r.rating === 'dislike').length})
+                                                苦手 ({myResults.filter(r => r.rating === 'dislike').length})
                                             </button>
                                             <button 
                                                 onClick={() => setGalleryTab('like')}
                                                 className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${galleryTab === 'like' ? 'bg-green-500/20 text-green-400 shadow' : 'text-slate-500 hover:text-slate-300'}`}
                                             >
-                                                LIKE ({results.filter(r => r.rating === 'like').length})
+                                                LIKE ({myResults.filter(r => r.rating === 'like').length})
                                             </button>
                                         </div>
                                         
                                         <div className="grid grid-cols-3 gap-2">
-                                            {results
+                                            {myResults
                                                 .filter(r => r.rating === galleryTab)
                                                 .map((r, i) => {
                                                     // 結果データに画像がない場合は、キャラリストから探すフォールバック
@@ -560,7 +566,7 @@
                                                     );
                                                 })
                                             }
-                                            {results.filter(r => r.rating === galleryTab).length === 0 && (
+                                            {myResults.filter(r => r.rating === galleryTab).length === 0 && (
                                                 <div className="col-span-3 text-center py-10 text-slate-500 text-xs">
                                                     まだ{galleryTab === 'dislike' ? '苦手' : 'LIKE'}したキャラがいません
                                                 </div>
