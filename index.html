@@ -131,8 +131,8 @@
             const [isDragging, setIsDragging] = useState(false);
             const startX = useRef(0);
 
-            // フォーム用
-            const [newChar, setNewChar] = useState({ name: '', imageUrl: '', tags: [] });
+            // フォーム用（source: 何のキャラクターか、を追加）
+            const [newChar, setNewChar] = useState({ name: '', source: '', imageUrl: '', tags: [] });
             
             // タグリストを拡張
             const suggestedTags = [
@@ -201,7 +201,7 @@
                 };
             }, [user]);
 
-            // 画像処理
+            // 画像処理（画質改善版）
             const processImage = (file) => {
                 return new Promise((resolve, reject) => {
                     const reader = new FileReader();
@@ -210,7 +210,8 @@
                         img.onload = () => {
                             const canvas = document.createElement('canvas');
                             const ctx = canvas.getContext('2d');
-                            const MAX_SIZE = 400; 
+                            // Firestore制限(1MB)内で可能な限り大きく (400 -> 800)
+                            const MAX_SIZE = 800; 
                             let width = img.width;
                             let height = img.height;
                             if (width > height) {
@@ -221,7 +222,8 @@
                             canvas.width = width;
                             canvas.height = height;
                             ctx.drawImage(img, 0, 0, width, height);
-                            resolve(canvas.toDataURL('image/jpeg', 0.6));
+                            // 画質を少し向上 (0.6 -> 0.8)
+                            resolve(canvas.toDataURL('image/jpeg', 0.8));
                         };
                         img.onerror = reject;
                         img.src = e.target.result;
@@ -255,12 +257,12 @@
                 try {
                     const charCol = collection(db, 'artifacts', appId, 'public', 'data', 'characters');
                     await addDoc(charCol, { ...newChar, createdAt: Date.now(), createdBy: user.uid });
-                    setNewChar({ name: '', imageUrl: '', tags: [] });
+                    setNewChar({ name: '', source: '', imageUrl: '', tags: [] }); // Reset form
                     alert("保存しました！");
                 } catch (err) {
                     console.error("Save error:", err);
                     if (err.message.includes("exceeds the maximum allowed size")) {
-                        alert("画像サイズが大きすぎます。別の画像を試してください。");
+                        alert("画像サイズが大きすぎます。もう少し小さい画像を選んでください。");
                     } else if (err.message.includes("Cloud Firestore API has not been used")) {
                          setCriticalError("firestore_not_created");
                     } else if (err.code === 'permission-denied') {
@@ -331,6 +333,7 @@
                         await addDoc(resultCol, {
                             characterId: char.id,
                             characterName: char.name,
+                            characterSource: char.source || '', // 作品名も保存
                             imageUrl: char.imageUrl,
                             tags: char.tags,
                             rating: rating,
@@ -370,9 +373,39 @@
                 return comments[topTag] || "特定の視覚的特徴に対して、強い自己防衛本能が働いています。この特徴を持つ対象を避けることで、心理的な安定を保とうとしているようです。";
             };
 
+            // クリップボードコピーのヘルパー関数（より確実な方法）
+            const copyToClipboard = (text) => {
+                if (navigator.clipboard && window.isSecureContext) {
+                    return navigator.clipboard.writeText(text);
+                } else {
+                    // フォールバック: execCommand('copy')
+                    return new Promise((resolve, reject) => {
+                        const textArea = document.createElement("textarea");
+                        textArea.value = text;
+                        textArea.style.position = "fixed";
+                        textArea.style.left = "-9999px";
+                        document.body.appendChild(textArea);
+                        textArea.focus();
+                        textArea.select();
+                        try {
+                            const successful = document.execCommand('copy');
+                            if (successful) resolve();
+                            else reject(new Error("Copy command failed"));
+                        } catch (err) {
+                            reject(err);
+                        } finally {
+                            document.body.removeChild(textArea);
+                        }
+                    });
+                }
+            };
+
             // AI分析用レポート生成
             const generateAIReport = () => {
-                if (!analysis || analysis.length === 0) return;
+                if (!analysis || analysis.length === 0) {
+                    alert("分析データがありません。");
+                    return;
+                }
                 
                 let report = "【キャラクター苦手傾向分析データ】\n";
                 report += "以下のデータを元に、この人の深層心理や、なぜこういった特徴を不気味に感じるのか、心理学的・美学的な観点から分析してください。\n\n";
@@ -384,12 +417,15 @@
                 report += "\n■特に苦手と判定したキャラクターの特徴\n";
                 const dislikeChars = myResults.filter(r => r.rating === 'dislike').slice(0, 10);
                 dislikeChars.forEach(c => {
-                    report += `- ${c.characterName} (タグ: ${c.tags ? c.tags.join(', ') : 'なし'})\n`;
+                    report += `- ${c.characterName} ${c.characterSource ? '(' + c.characterSource + ')' : ''} (タグ: ${c.tags ? c.tags.join(', ') : 'なし'})\n`;
                 });
 
-                navigator.clipboard.writeText(report).then(() => {
-                    alert("AI分析用プロンプトをコピーしました！\nChatGPTやGeminiに貼り付けて聞いてみてください。");
-                });
+                copyToClipboard(report)
+                    .then(() => alert("AI分析用プロンプトをコピーしました！\nChatGPTやGeminiに貼り付けて聞いてみてください。"))
+                    .catch(err => {
+                        console.error('Copy failed', err);
+                        alert("コピーに失敗しました。画面上のデータを手動でコピーしてください。");
+                    });
             };
 
             const onStart = (e) => { setIsDragging(true); startX.current = e.type.includes('touch') ? e.touches[0].clientX : e.clientX; };
@@ -459,6 +495,12 @@
                                             value={newChar.name}
                                             onChange={e => setNewChar({...newChar, name: e.target.value})}
                                         />
+                                        <input 
+                                            placeholder="作品名・詳細 (例: 〇〇のアニメ)"
+                                            className="w-full bg-slate-700 border-none rounded-2xl p-4 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500"
+                                            value={newChar.source}
+                                            onChange={e => setNewChar({...newChar, source: e.target.value})}
+                                        />
                                         <div className="space-y-2">
                                             <div className="flex gap-2">
                                                 <input 
@@ -513,6 +555,7 @@
                                                 <img src={c.imageUrl || "https://via.placeholder.com/150"} className="w-14 h-14 rounded-xl object-cover" />
                                                 <div className="flex-1 min-w-0">
                                                     <p className="font-bold text-sm truncate">{c.name}</p>
+                                                    {c.source && <p className="text-xs text-slate-400 truncate">{c.source}</p>}
                                                     <div className="flex gap-1 overflow-x-auto no-scrollbar mt-1">{c.tags?.map(t => <span key={t} className="text-[9px] text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded">#{t}</span>)}</div>
                                                 </div>
                                                 <button onClick={() => deleteCharacter(c.id)} className="p-2 text-slate-600 hover:text-red-400"><Trash2 size={18} /></button>
@@ -532,7 +575,8 @@
                                                 <div key={char.id} className="absolute inset-0 bg-slate-800 rounded-[2.5rem] shadow-2xl border border-slate-700 overflow-hidden touch-none select-none transition-transform duration-200 ease-out" style={{transform: isTop ? `translateX(${offsetX}px) rotate(${offsetX * 0.05}deg) scale(1)` : `scale(0.92) translateY(20px)`, zIndex: isTop ? 20 : 10, opacity: isTop ? 1 : 0.4}} onMouseDown={isTop ? onStart : undefined} onMouseMove={isTop ? onMove : undefined} onMouseUp={isTop ? onEnd : undefined} onMouseLeave={isTop ? onEnd : undefined} onTouchStart={isTop ? onStart : undefined} onTouchMove={isTop ? onMove : undefined} onTouchEnd={isTop ? onEnd : undefined}>
                                                     <img src={char.imageUrl || "https://via.placeholder.com/400x600"} className="w-full h-3/4 object-cover pointer-events-none" />
                                                     <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-slate-900 via-slate-900/80 to-transparent">
-                                                        <h2 className="text-3xl font-black mb-2">{char.name}</h2>
+                                                        <h2 className="text-3xl font-black mb-1">{char.name}</h2>
+                                                        {char.source && <p className="text-sm text-slate-300 mb-2">{char.source}</p>}
                                                         <div className="flex flex-wrap gap-2">{char.tags?.map(t => (<span key={t} className="text-[10px] bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-white/80 border border-white/5 font-bold uppercase tracking-wider">#{t}</span>))}</div>
                                                     </div>
                                                     {isTop && offsetX > 50 && <div className="absolute top-12 left-8 border-4 border-green-500 text-green-500 font-black text-5xl p-2 rounded-2xl rotate-[-20deg]" style={{opacity: Math.min(offsetX/150, 1)}}>LIKE</div>}
@@ -644,6 +688,7 @@
                                                             </div>
                                                             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                                                                 <p className="text-[9px] text-white truncate">{r.characterName}</p>
+                                                                {r.characterSource && <p className="text-[8px] text-slate-400 truncate">{r.characterSource}</p>}
                                                             </div>
                                                         </div>
                                                     );
